@@ -1,0 +1,5 @@
+# Conductor runtime state
+.aboyeur/
+
+# macOS
+.DS_Store
