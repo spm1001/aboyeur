@@ -100,4 +100,4 @@ shared/
 | **Pi / Claude Code** | Agent harness — the Claude that does the work |
 | **Aboyeur** | Orchestrator — alternates sessions, pages when stuck |
 
-Aboyeur consumes all of these but owns none of them.
+Aboyeur consumes all of these but owns none of them. See [Batterie de Savoir](https://spm1001.github.io/batterie-de-savoir/) for the full brigade and design principles.
