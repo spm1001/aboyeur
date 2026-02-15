@@ -8,7 +8,7 @@
 #
 # Options:
 #   --adapter <pi|claude-code>   Agent harness to use (default: pi)
-#   --max-idle <minutes>         Page human if no arc progress after N minutes (default: 60)
+#   --max-idle <minutes>         Page human if no bon progress after N minutes (default: 60)
 #   --pager <path>               Pager script (default: adapters/pager/notify.sh)
 #
 # The conductor is deliberately simple. The intelligence lives in:
@@ -72,7 +72,7 @@ fi
 
 ROLE="worker"  # start with a worker
 CYCLE=0
-LAST_ARC_HASH=""
+LAST_BON_HASH=""
 LAST_PROGRESS_TIME=$(date +%s)
 LOG_FILE="$PROJECT_DIR/.aboyeur/conductor.log"
 
@@ -83,24 +83,24 @@ log() {
     echo "$msg" | tee -a "$LOG_FILE"
 }
 
-# ─── Arc state snapshot ──────────────────────────────────────────────────
+# ─── Bon state snapshot ──────────────────────────────────────────────────
 
-arc_hash() {
-    # Hash of arc state — if this changes, progress was made
-    if [ -d "$PROJECT_DIR/.arc" ]; then
-        (cd "$PROJECT_DIR" && arc list --all --json 2>/dev/null | shasum -a 256 | cut -d' ' -f1) || echo "no-arc"
+bon_hash() {
+    # Hash of bon state — if this changes, progress was made
+    if [ -d "$PROJECT_DIR/.bon" ]; then
+        (cd "$PROJECT_DIR" && bon list --all --json 2>/dev/null | shasum -a 256 | cut -d' ' -f1) || echo "no-bon"
     else
-        echo "no-arc"
+        echo "no-bon"
     fi
 }
 
 check_stuck() {
     local current_hash
-    current_hash=$(arc_hash)
+    current_hash=$(bon_hash)
 
-    if [ "$current_hash" != "$LAST_ARC_HASH" ]; then
+    if [ "$current_hash" != "$LAST_BON_HASH" ]; then
         # Progress was made
-        LAST_ARC_HASH="$current_hash"
+        LAST_BON_HASH="$current_hash"
         LAST_PROGRESS_TIME=$(date +%s)
         return 1  # not stuck
     fi
@@ -140,7 +140,7 @@ latest_handoff_has_escalation() {
 
 # ─── Main loop ───────────────────────────────────────────────────────────
 
-LAST_ARC_HASH=$(arc_hash)
+LAST_BON_HASH=$(bon_hash)
 
 log "Aboyeur starting. Project: $PROJECT_DIR, Adapter: $ADAPTER"
 log "Max idle: ${MAX_IDLE_MINUTES}m. Pager: $PAGER"
@@ -172,14 +172,14 @@ while true; do
         LAST_PROGRESS_TIME=$(date +%s)
     fi
 
-    # Check if stuck (no arc progress for too long)
+    # Check if stuck (no bon progress for too long)
     if check_stuck; then
-        log "STUCK: no arc progress for ${MAX_IDLE_MINUTES}+ minutes"
+        log "STUCK: no bon progress for ${MAX_IDLE_MINUTES}+ minutes"
         "$PAGER" "Aboyeur" "No progress for ${MAX_IDLE_MINUTES}m in $PROJECT_DIR"
         echo ""
         echo "═══════════════════════════════════════════════════════"
         echo " NO PROGRESS DETECTED"
-        echo " Arc state hasn't changed in ${MAX_IDLE_MINUTES} minutes."
+        echo " Bon state hasn't changed in ${MAX_IDLE_MINUTES} minutes."
         echo " Press Enter to continue or Ctrl+C to stop."
         echo "═══════════════════════════════════════════════════════"
         echo ""

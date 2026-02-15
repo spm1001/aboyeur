@@ -30,11 +30,11 @@ If the reflector is too polite, the whole system is an expensive rubber stamp. W
 
 ## Testing
 
-No automated tests yet. Test by running `conductor.sh` on a real project with `.arc/` and observing the worker→reflector→worker cycle.
+No automated tests yet. Test by running `conductor.sh` on a real project with `.bon/` and observing the worker→reflector→worker cycle.
 
 ## Dependencies
 
-- Arc CLI (`arc`)
+- Bon CLI (`bon`)
 - Pi or Claude Code (via adapter)
-- claude-suite handoff infrastructure (`~/.claude/handoffs/`)
+- Trousse handoff infrastructure (`~/.claude/handoffs/`)
 - macOS (for default pager — `osascript`)

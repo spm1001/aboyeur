@@ -1,4 +1,6 @@
-# Orchestration Pattern: Building Arc
+# Orchestration Pattern: Building Bon
+
+> Note: Bon was originally called "Arc" during development. The command examples below reflect what was actually typed at the time.
 
 **Date:** 2026-01-25
 **Branch:** `experiment/orch-v1`
@@ -77,9 +79,9 @@ Dedicated review agent found real issues:
 
 The fix-after-review loop caught bugs that tests missed.
 
-### 4. Arc Dogfooding (Phase 4)
+### 4. Bon Dogfooding (Phase 4)
 
-Used arc itself to track Phase 4:
+Used bon itself to track Phase 4:
 ```bash
 arc new "Phase 4: Skill" --why "..." --what "..." --done "..."
 arc new "Write SKILL.md" --for arc-gasope ...
@@ -170,13 +172,13 @@ End:
 
 1. **Failure modes:** What happens when an agent returns broken code? (Didn't occur)
 2. **Scaling:** Does the pattern work for 50+ commands?
-3. **Complexity:** How does `arc edit` (subprocess, validation, reorder) compare to truly complex features?
-4. **Cross-session:** Can a fresh Claude resume mid-phase using arc + handoff?
+3. **Complexity:** How does `bon edit` (subprocess, validation, reorder) compare to truly complex features?
+4. **Cross-session:** Can a fresh Claude resume mid-phase using bon + handoff?
 
 ---
 
 ## Conclusion
 
-The orchestration pattern worked well for arc. Key insight: **prescriptive prompts + verification tests + dedicated reviewer** creates a reliable loop where the orchestrator maintains context while subagents do implementation.
+The orchestration pattern worked well for bon. Key insight: **prescriptive prompts + verification tests + dedicated reviewer** creates a reliable loop where the orchestrator maintains context while subagents do implementation.
 
 The pattern is ready to apply to other projects. Start with detailed spec, chunk by feature, verify with tests, review with Opus.

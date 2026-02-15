@@ -12,13 +12,13 @@ Aboyeur does the same for Claude sessions. It alternates **worker** sessions (do
 Worker → writes handoff → Reflector → reviews, fixes, writes handoff → Worker → ...
 ```
 
-The **worker** reads the previous handoff, picks up work from Arc, builds, commits, and writes a handoff when context fills up or work completes.
+The **worker** reads the previous handoff, picks up work from Bon, builds, commits, and writes a handoff when context fills up or work completes.
 
-The **reflector** reads the worker's handoff with fresh eyes. It asks: what was missed? What could be better? What could go wrong? It does modest remedial work (bug fixes, plan adjustments, arc updates) and writes a handoff that becomes the next worker's brief.
+The **reflector** reads the worker's handoff with fresh eyes. It asks: what was missed? What could be better? What could go wrong? It does modest remedial work (bug fixes, plan adjustments, bon updates) and writes a handoff that becomes the next worker's brief.
 
 The **conductor** (`conductor.sh`) alternates between them. It pages the human when:
 - A handoff contains "HUMAN REVIEW NEEDED"
-- Arc state hasn't changed for too long (configurable, default 60 minutes)
+- Bon state hasn't changed for too long (configurable, default 60 minutes)
 
 That's it. The intelligence lives in the prompts and the handoff files, not in the conductor.
 
@@ -42,7 +42,7 @@ shared/
 1. Start a worker session (via adapter)
 2. Wait for it to exit
 3. Check handoff for escalation ("HUMAN REVIEW NEEDED")
-4. Check arc state for progress (hash comparison)
+4. Check bon state for progress (hash comparison)
 5. Start a reflector session
 6. Wait for it to exit
 7. Repeat from 1
@@ -51,7 +51,7 @@ shared/
 
 - Parse LLM output
 - Make complex decisions
-- Manage state beyond "is arc progressing?" and "did the handoff escalate?"
+- Manage state beyond "is bon progressing?" and "did the handoff escalate?"
 
 ## Usage
 
@@ -72,9 +72,9 @@ shared/
 ## Prerequisites
 
 - [Pi](https://github.com/badlogic/pi-mono) or Claude Code
-- [Arc](https://github.com/spm1001/arc) CLI in PATH
-- `.arc/` initialised in the project
-- Handoff infrastructure from [claude-suite](https://github.com/spm1001/claude-suite)
+- [Bon](https://github.com/spm1001/bon) CLI in PATH
+- `.bon/` initialised in the project
+- Handoff infrastructure from [Trousse](https://github.com/spm1001/trousse)
 
 ## Design principles
 
@@ -84,14 +84,14 @@ shared/
 
 **Harness-agnostic.** The prompts work with any agent that can read files and run commands. Adapters handle the mechanical differences (how to start a session, how to pass the initial message). Today: Pi. Tomorrow: Claude Code, or whatever comes next.
 
-**Silent when no Arc.** If the project has no `.arc/` directory, the stuck-detection is disabled. The prompts still work — they just skip the arc-specific steps.
+**Silent when no Bon.** If the project has no `.bon/` directory, the stuck-detection is disabled. The prompts still work — they just skip the bon-specific steps.
 
 ## Relationship to other tools
 
 | Tool | Role |
 |------|------|
-| **Arc** | Work tracker — outcomes, actions, tactical steps |
-| **claude-suite** | Session lifecycle — /open, /close, handoff format, hooks |
+| **Bon** | Work tracker — outcomes, actions, tactical steps |
+| **Trousse** | Session lifecycle — /open, /close, handoff format, hooks |
 | **Pi / Claude Code** | Agent harness — the Claude that does the work |
 | **Aboyeur** | Orchestrator — alternates sessions, pages when stuck |
 
