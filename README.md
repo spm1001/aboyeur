@@ -4,10 +4,12 @@
 
 In a professional kitchen, the aboyeur stands at the pass. They don't cook — they call the tickets, check every plate before it goes out, coordinate timing between stations. When something's wrong, they send it back. When everything's right, they call "service."
 
-> **Status:** Alpha — experimental, actively developed
-> **Works with:** Claude Code
-> **Install:** `git clone` + run `conductor.sh`
-> **Requires:** Claude Code CLI, Bon
+## Status
+
+**Robustness:** Alpha — experimental, actively developed
+**Works with:** Claude Code
+**Install:** `git clone` + run `conductor.sh`
+**Requires:** Claude Code CLI, Bon
 
 Aboyeur does the same for Claude sessions. It alternates **worker** sessions (do the work) with **reflector** sessions (review the work), using handoff files as the protocol between them. Each Claude gets a clean context, fresh eyes, and clear direction.
 
