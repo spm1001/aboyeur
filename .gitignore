@@ -1,6 +1,2 @@
 # Conductor runtime state
 .aboyeur/
-
-# macOS
-.DS_Store
-mise-fetch/
