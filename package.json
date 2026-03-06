@@ -5,10 +5,14 @@
   "type": "module",
   "scripts": {
     "build": "tsc",
-    "test": "tsc && node --test dist/**/*.test.js"
+    "test": "tsc && node --test $(find dist -name '*.test.js')"
   },
   "devDependencies": {
-    "typescript": "^5.7",
-    "@types/node": "^22"
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/node": "^22",
+    "typescript": "^5.7"
+  },
+  "dependencies": {
+    "better-sqlite3": "^12.6.2"
   }
 }
