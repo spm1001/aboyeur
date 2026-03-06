@@ -1,2 +1,6 @@
 # Conductor runtime state
 .aboyeur/
+
+# Node / TypeScript
+node_modules/
+dist/
