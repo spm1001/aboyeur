@@ -11,7 +11,7 @@ Daemon (Node.js, always-on)
   ├── polls: Gmail API, cron, filesystem, webhooks
   ├── normalizes triggers → SQLite queue
   ├── drains queue through per-context FIFO (max 3 concurrent)
-  └── spawns agents via spawnAgent() (Agent SDK + env-var stripping)
+  └── spawns agents via spawnAgent() (claude CLI + env-var stripping)
 
 Conductor (Claude session, spawned by daemon)
   ├── reads handoffs and bon state
@@ -28,6 +28,11 @@ Workers and Reflectors (Claude sessions, spawned by conductor or daemon)
 
 | File | Purpose | Sensitivity |
 |------|---------|-------------|
+| `src/spawn-agent.ts` | spawnAgent() — spawn claude, collect output, resume sessions | High — foundation for all agent spawning |
+| `src/trigger-db.ts` | SQLite trigger queue — schema, dedup, cursors, crash recovery | High — daemon state lives here |
+| `src/trigger-loop.ts` | Polling loop that drains the trigger queue | Medium |
+| `src/context-queue.ts` | Per-context FIFO with concurrency limits and lane policies | High — prevents runaway spawning |
+| `src/index.ts` | Barrel export for daemon modules | Low |
 | `docs/architecture-decisions.md` | Design decisions and rejected alternatives | High — prevents re-derivation |
 | `shared/prompts/reflector-open.md` | Reflector instructions (code/work review) | High — sycophancy risk if weakened |
 | `shared/prompts/planning-reflector.md` | Planning reflector (architecture review) | High — catches assumption errors |
@@ -71,4 +76,4 @@ End-to-end test harness (aby-wesaci) with mock Agent SDK. Test the plumbing (tri
 
 ## Status
 
-Pre-alpha. Legacy shell conductor works with Pi adapter. New architecture (daemon + conductor Claude + Agent SDK) is planned — see bon items. Planning reflector prompt is written and validated.
+Pre-alpha. Daemon core plumbing built: `spawnAgent()` → `TriggerDB` → `TriggerLoop` → `ContextQueue`. These are tested individually but not yet wired together into a running daemon. Next: Gmail trigger, HEARTBEAT cron, and the integration wiring. Planning reflector prompt is written and validated. Legacy shell conductor still exists but is being replaced.

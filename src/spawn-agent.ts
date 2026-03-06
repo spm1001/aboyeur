@@ -30,7 +30,7 @@ export interface SpawnAgentOptions {
   allowedTools?: string[];
   /** Disallowed tools (defaults to WebFetch, TodoWrite, NotebookEdit). */
   disallowedTools?: string[];
-  /** Permission mode (default: "bypassPermissions"). */
+  /** Permission mode (default: "default" — uses --allowed-tools whitelist). */
   permissionMode?: string;
   /** MCP config path (defaults to ~/.claude/settings.json). */
   mcpConfigPath?: string;
@@ -105,7 +105,7 @@ const DEFAULT_INIT_TIMEOUT_MS = 30_000;
 function buildArgs(opts: SpawnAgentOptions, sessionId: string): string[] {
   const allowed = opts.allowedTools ?? DEFAULT_ALLOWED_TOOLS;
   const disallowed = opts.disallowedTools ?? DEFAULT_DISALLOWED_TOOLS;
-  const permissionMode = opts.permissionMode ?? "bypassPermissions";
+  const permissionMode = opts.permissionMode ?? "default";
   const mcpConfig = opts.mcpConfigPath ?? MCP_CONFIG_DEFAULT;
 
   const args = [
