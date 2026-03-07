@@ -7,9 +7,20 @@ Captured 6 Mar 2026 from a research and design session. This document records wh
 Aboyeur has two parts, like a brain:
 
 - **The daemon** (lizard brain) — always-on Node.js process. Watches triggers (Gmail API, cron, filesystem). Reacts reflexively: trigger arrives → queue → spawn agent. No intelligence, no Claude, just code.
-- **The conductor** (frontal lobe) — a Claude session spawned by the daemon. Makes deliberate decisions: which worker to spawn next, whether to run a reflector, whether to escalate. Generates bespoke prompts. Holds the big picture via handoffs and bon state.
+- **The aboyeur** (receptionist) — a persistent, minimal-context Claude session. Holds goals, not plans. Routes triggers to the right handler: one-shot Claudes for simple tasks, project manager Claudes for multi-session work. Sees only summaries and escalations. Restartable — goals live in bons (outcomes level only).
+- **Project manager Claudes** (middle management) — spawned by the aboyeur for multi-session work. A PM is a human simulator: it does what Sameer does — reads bon state (structured, via `--json`), checks handoffs, picks next work by context correlation, manages the work→review→route beat, spawns workers and reflectors. Deep in the weeds of one project. Reports progress lines back to the aboyeur.
+- **One-shot Claudes** — spawned by the aboyeur for single-session tasks (triage an email, read an article, check a status). Handle and return.
 
-They are separate processes. The daemon spawns the conductor (among other agents). The conductor uses the same `spawnAgent()` primitive to spawn workers and reflectors.
+All Claude sessions are technically **side-by-side pods under the Gueridon bridge** — flat, peer processes. The bridge doesn't know about hierarchy. The hierarchy is purely informational: who reads whose output, and at what granularity. Prompts and deposit patterns create the relationships, not process structure.
+
+```
+Process reality:     Gueridon bridge → [session] [session] [session] [session] ...
+Informational flow:  Aboyeur ←summary── PM ←verdict── Reflector
+                                         PM ──spawns→ Worker
+                     Aboyeur ←summary── One-shot
+```
+
+The daemon spawns the aboyeur via `spawnAgent()`. Everything else goes through the Gueridon bridge API.
 
 ## Decisions Made
 

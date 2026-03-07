@@ -1,0 +1,179 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 820" width="1280" height="820">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-auto">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#94a3b8"/>
+    </marker>
+    <marker id="arrow-cyan" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-auto">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#38bdf8"/>
+    </marker>
+    <marker id="arrow-purple" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-auto">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#a78bfa"/>
+    </marker>
+    <marker id="arrow-green" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-auto">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#4ade80"/>
+    </marker>
+    <marker id="arrow-amber" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-auto">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#fbbf24"/>
+    </marker>
+    <marker id="arrow-rose" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-auto">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#fb7185"/>
+    </marker>
+  </defs>
+
+  <!-- Background -->
+  <rect x="0" y="0" width="1280" height="820" fill="#0f172a"/>
+
+  <!-- ==================== TOP: PROCESS REALITY ==================== -->
+  <text x="640" y="42" text-anchor="middle" font-family="system-ui, sans-serif" font-size="28" font-weight="bold" fill="#e2e8f0">Process Flat, Information Hierarchical</text>
+  <text x="640" y="68" text-anchor="middle" font-family="system-ui, sans-serif" font-size="14" fill="#64748b">All Claude sessions are side-by-side pods under the Gueridon bridge. The bridge doesn't know about hierarchy.</text>
+
+  <!-- Bridge bar -->
+  <rect x="80" y="92" width="1120" height="52" rx="8" fill="#1e293b" stroke="#a78bfa" stroke-width="2"/>
+  <text x="640" y="116" text-anchor="middle" font-family="system-ui, sans-serif" font-size="16" font-weight="bold" fill="#a78bfa">Gueridon Bridge</text>
+  <text x="640" y="134" text-anchor="middle" font-family="system-ui, sans-serif" font-size="11" fill="#64748b">spawn / list / monitor / kill — all sessions are peers</text>
+
+  <!-- Session pods hanging from bridge -->
+  <!-- Aboyeur -->
+  <line x1="175" y1="144" x2="175" y2="168" stroke="#a78bfa" stroke-width="2"/>
+  <rect x="105" y="168" width="140" height="56" rx="8" fill="#1e293b" stroke="#fbbf24" stroke-width="2.5"/>
+  <text x="175" y="192" text-anchor="middle" font-family="system-ui, sans-serif" font-size="14" font-weight="bold" fill="#fbbf24">Aboyeur</text>
+  <text x="175" y="212" text-anchor="middle" font-family="system-ui, sans-serif" font-size="10" fill="#94a3b8">goals, routing</text>
+
+  <!-- One-shot -->
+  <line x1="370" y1="144" x2="370" y2="168" stroke="#a78bfa" stroke-width="2"/>
+  <rect x="300" y="168" width="140" height="56" rx="8" fill="#1e293b" stroke="#38bdf8" stroke-width="2"/>
+  <text x="370" y="192" text-anchor="middle" font-family="system-ui, sans-serif" font-size="14" font-weight="bold" fill="#38bdf8">One-shot</text>
+  <text x="370" y="212" text-anchor="middle" font-family="system-ui, sans-serif" font-size="10" fill="#94a3b8">email, article, status</text>
+
+  <!-- PM -->
+  <line x1="565" y1="144" x2="565" y2="168" stroke="#a78bfa" stroke-width="2"/>
+  <rect x="495" y="168" width="140" height="56" rx="8" fill="#1e293b" stroke="#fb7185" stroke-width="2.5"/>
+  <text x="565" y="192" text-anchor="middle" font-family="system-ui, sans-serif" font-size="14" font-weight="bold" fill="#fb7185">PM Claude</text>
+  <text x="565" y="212" text-anchor="middle" font-family="system-ui, sans-serif" font-size="10" fill="#94a3b8">one project's plan</text>
+
+  <!-- Worker 1 -->
+  <line x1="760" y1="144" x2="760" y2="168" stroke="#a78bfa" stroke-width="2"/>
+  <rect x="690" y="168" width="140" height="56" rx="8" fill="#1e293b" stroke="#4ade80" stroke-width="2"/>
+  <text x="760" y="192" text-anchor="middle" font-family="system-ui, sans-serif" font-size="14" font-weight="bold" fill="#4ade80">Worker</text>
+  <text x="760" y="212" text-anchor="middle" font-family="system-ui, sans-serif" font-size="10" fill="#94a3b8">aby-sanimu-01</text>
+
+  <!-- Reflector -->
+  <line x1="955" y1="144" x2="955" y2="168" stroke="#a78bfa" stroke-width="2"/>
+  <rect x="885" y="168" width="140" height="56" rx="8" fill="#1e293b" stroke="#c084fc" stroke-width="2"/>
+  <text x="955" y="192" text-anchor="middle" font-family="system-ui, sans-serif" font-size="14" font-weight="bold" fill="#c084fc">Reflector</text>
+  <text x="955" y="212" text-anchor="middle" font-family="system-ui, sans-serif" font-size="10" fill="#94a3b8">aby-sanimu-01</text>
+
+  <!-- Worker 2 -->
+  <line x1="1125" y1="144" x2="1125" y2="168" stroke="#a78bfa" stroke-width="2"/>
+  <rect x="1055" y="168" width="140" height="56" rx="8" fill="#1e293b" stroke="#4ade80" stroke-width="2"/>
+  <text x="1125" y="192" text-anchor="middle" font-family="system-ui, sans-serif" font-size="14" font-weight="bold" fill="#4ade80">Worker</text>
+  <text x="1125" y="212" text-anchor="middle" font-family="system-ui, sans-serif" font-size="10" fill="#94a3b8">aby-vemapa-01</text>
+
+  <!-- ==================== MIDDLE: INFORMATION FLOW ==================== -->
+
+  <text x="640" y="278" text-anchor="middle" font-family="system-ui, sans-serif" font-size="20" font-weight="bold" fill="#e2e8f0">Information Flow: Each Level Up Sees Less</text>
+
+  <!-- Three columns showing the pyramid -->
+
+  <!-- Column 1: Aboyeur level -->
+  <rect x="60" y="300" width="340" height="220" rx="12" fill="#1e293b" stroke="#fbbf24" stroke-width="1.5"/>
+  <text x="230" y="330" text-anchor="middle" font-family="system-ui, sans-serif" font-size="16" font-weight="bold" fill="#fbbf24">Aboyeur Sees</text>
+  <text x="230" y="352" text-anchor="middle" font-family="system-ui, sans-serif" font-size="12" fill="#64748b">Goals and one-liners</text>
+
+  <g transform="translate(80, 375)" font-family="monospace" font-size="12">
+    <text x="0" y="0" fill="#4ade80">✓ email-203015: article shared, no action</text>
+    <text x="0" y="22" fill="#fbbf24">● pm-aby-zehiwo: 3/9 actions done</text>
+    <text x="0" y="44" fill="#fb7185">⚠ pm-aby-zazuma: escalation — OAuth blocked</text>
+    <text x="0" y="66" fill="#4ade80">✓ heartbeat-210000: all PMs healthy</text>
+    <text x="0" y="96" fill="#475569">That's it. ~4 lines per trigger cycle.</text>
+    <text x="0" y="116" fill="#475569">No project details. No code. No bons.</text>
+  </g>
+
+  <!-- Column 2: PM level -->
+  <rect x="430" y="300" width="400" height="220" rx="12" fill="#1e293b" stroke="#fb7185" stroke-width="1.5"/>
+  <text x="630" y="330" text-anchor="middle" font-family="system-ui, sans-serif" font-size="16" font-weight="bold" fill="#fb7185">PM Claude Sees</text>
+  <text x="630" y="352" text-anchor="middle" font-family="system-ui, sans-serif" font-size="12" fill="#64748b">One project's structured state + summaries</text>
+
+  <g transform="translate(450, 375)" font-family="monospace" font-size="12">
+    <text x="0" y="0" fill="#94a3b8">bon list --json → 9 actions, 3 done</text>
+    <text x="0" y="22" fill="#94a3b8">handoff: worker-aby-sanimu-01 wrote Gmail poller</text>
+    <text x="0" y="44" fill="#c084fc">verdict: {"approved": true, "issues": []}</text>
+    <text x="0" y="66" fill="#94a3b8">next by context correlation: aby-vemapa</text>
+    <text x="0" y="96" fill="#475569">Summaries of worker sessions, not transcripts.</text>
+    <text x="0" y="116" fill="#475569">Structured verdicts from reflectors.</text>
+  </g>
+
+  <!-- Column 3: Worker level -->
+  <rect x="860" y="300" width="360" height="220" rx="12" fill="#1e293b" stroke="#4ade80" stroke-width="1.5"/>
+  <text x="1040" y="330" text-anchor="middle" font-family="system-ui, sans-serif" font-size="16" font-weight="bold" fill="#4ade80">Worker / Reflector Sees</text>
+  <text x="1040" y="352" text-anchor="middle" font-family="system-ui, sans-serif" font-size="12" fill="#64748b">Full codebase context for one action</text>
+
+  <g transform="translate(880, 375)" font-family="monospace" font-size="12">
+    <text x="0" y="0" fill="#94a3b8">CLAUDE.md → project conventions</text>
+    <text x="0" y="22" fill="#94a3b8">bon show aby-sanimu → full brief</text>
+    <text x="0" y="44" fill="#94a3b8">src/trigger-db.ts → read, understand</text>
+    <text x="0" y="66" fill="#94a3b8">npm test → run, verify, iterate</text>
+    <text x="0" y="96" fill="#475569">All the tokens. Full codebase depth.</text>
+    <text x="0" y="116" fill="#475569">Oblivious to PM, aboyeur, other workers.</text>
+  </g>
+
+  <!-- Arrows showing information flow between columns -->
+  <line x1="400" y1="410" x2="430" y2="410" stroke="#fbbf24" stroke-width="2" marker-end="url(#arrow-amber)"/>
+  <text x="415" y="400" text-anchor="middle" font-family="system-ui, sans-serif" font-size="9" fill="#fbbf24" transform="rotate(-90, 415, 400)">summary</text>
+
+  <line x1="830" y1="410" x2="860" y2="410" stroke="#fb7185" stroke-width="2" marker-end="url(#arrow-rose)"/>
+  <text x="845" y="400" text-anchor="middle" font-family="system-ui, sans-serif" font-size="9" fill="#fb7185" transform="rotate(-90, 845, 400)">verdict</text>
+
+  <!-- ==================== BOTTOM: TWO SCENARIOS ==================== -->
+
+  <rect x="60" y="548" width="540" height="245" rx="12" fill="#1e293b" stroke="#38bdf8" stroke-width="1.5"/>
+  <text x="330" y="578" text-anchor="middle" font-family="system-ui, sans-serif" font-size="17" font-weight="bold" fill="#38bdf8">One-Shot: "Read This Article"</text>
+
+  <g transform="translate(80, 600)" font-family="system-ui, sans-serif" font-size="13">
+    <circle cx="8" cy="6" r="5" fill="#f87171"/>
+    <text x="22" y="10" fill="#f87171">Email: "interesting article, thoughts?"</text>
+
+    <line x1="8" y1="16" x2="8" y2="36" stroke="#334155" stroke-width="1"/>
+    <circle cx="8" cy="42" r="5" fill="#fbbf24"/>
+    <text x="22" y="46" fill="#fbbf24">Aboyeur: one-shot, spawn reader</text>
+
+    <line x1="8" y1="52" x2="8" y2="72" stroke="#334155" stroke-width="1"/>
+    <circle cx="8" cy="78" r="5" fill="#38bdf8"/>
+    <text x="22" y="82" fill="#38bdf8">One-shot: reads article, drafts reply</text>
+
+    <line x1="8" y1="88" x2="8" y2="108" stroke="#334155" stroke-width="1"/>
+    <circle cx="8" cy="114" r="5" fill="#fbbf24"/>
+    <text x="22" y="118" fill="#fbbf24">Aboyeur: "email handled, summary: ..."</text>
+
+    <text x="22" y="155" fill="#475569">Done. Aboyeur context cost: ~2 lines.</text>
+    <text x="22" y="175" fill="#475569">Might even become a dialogue (multi-turn one-shot).</text>
+  </g>
+
+  <!-- Scenario 2: Project -->
+  <rect x="630" y="548" width="590" height="245" rx="12" fill="#1e293b" stroke="#fb7185" stroke-width="1.5"/>
+  <text x="925" y="578" text-anchor="middle" font-family="system-ui, sans-serif" font-size="17" font-weight="bold" fill="#fb7185">Project: "Hell Yeah, Build Rube Goldberg"</text>
+
+  <g transform="translate(650, 600)" font-family="system-ui, sans-serif" font-size="13">
+    <circle cx="8" cy="6" r="5" fill="#f87171"/>
+    <text x="22" y="10" fill="#f87171">Email: "hell yeah let's build it"</text>
+
+    <line x1="8" y1="16" x2="8" y2="36" stroke="#334155" stroke-width="1"/>
+    <circle cx="8" cy="42" r="5" fill="#fbbf24"/>
+    <text x="22" y="46" fill="#fbbf24">Aboyeur: multi-session, spawn PM</text>
+
+    <line x1="8" y1="52" x2="8" y2="72" stroke="#334155" stroke-width="1"/>
+    <circle cx="8" cy="78" r="5" fill="#fb7185"/>
+    <text x="22" y="82" fill="#fb7185">PM: reads bons, picks aby-sanimu, spawns worker</text>
+
+    <line x1="8" y1="88" x2="8" y2="108" stroke="#334155" stroke-width="1"/>
+    <circle cx="8" cy="114" r="5" fill="#4ade80"/>
+    <text x="22" y="118" fill="#4ade80">Worker → Reflector → verdict → PM routes</text>
+
+    <line x1="8" y1="124" x2="8" y2="142" stroke="#334155" stroke-width="1"/>
+    <circle cx="8" cy="148" r="5" fill="#fbbf24"/>
+    <text x="22" y="152" fill="#fbbf24">Aboyeur: "Rube Goldberg: 3/9 done, on track"</text>
+
+    <text x="22" y="180" fill="#475569">PM manages 5-10 sessions. Aboyeur sees one-liners.</text>
+  </g>
+
+</svg>

@@ -10,7 +10,7 @@
 import { TriggerDB, type Trigger } from "./trigger-db.js";
 import { startTriggerLoop } from "./trigger-loop.js";
 import { ContextQueue, type ContextQueueOptions } from "./context-queue.js";
-import { spawnAgent, type SpawnAgentOptions } from "./spawn-agent.js";
+import { spawnAgent, type SpawnAgentOptions, type SpawnAgentResult } from "./spawn-agent.js";
 import { join } from "node:path";
 import { mkdirSync } from "node:fs";
 
@@ -29,6 +29,11 @@ export interface DaemonOptions {
    * what prompt to send, what system prompt to inject.
    */
   resolveSpawn: (trigger: Trigger) => SpawnAgentOptions;
+  /**
+   * Override the spawn function (default: spawnAgent).
+   * Used in tests to inject a mock that returns canned results.
+   */
+  spawn?: (opts: SpawnAgentOptions) => Promise<SpawnAgentResult>;
   /** Called when a trigger is dispatched to spawnAgent. */
   onDispatch?: (trigger: Trigger) => void;
   /** Called when a trigger completes. */
@@ -70,7 +75,8 @@ export function startDaemon(opts: DaemonOptions): DaemonHandle {
           try {
             opts.onDispatch?.(trigger);
             const spawnOpts = opts.resolveSpawn(trigger);
-            const result = await spawnAgent(spawnOpts);
+            const doSpawn = opts.spawn ?? spawnAgent;
+            const result = await doSpawn(spawnOpts);
             opts.onComplete?.(trigger, result);
 
             if (result.status === "error") {
