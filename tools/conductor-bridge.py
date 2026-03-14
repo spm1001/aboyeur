@@ -100,8 +100,15 @@ def log(agent_id, msg):
 async def watch_outbox(ws, agent_id, agent_dir):
     """Poll outbox file for messages to send."""
     outbox = agent_dir / "outbox.jsonl"
+    cursor_file = agent_dir / ".outbox_cursor"
     outbox.touch()
-    last_pos = 0
+
+    # Resume from persisted cursor (survives reconnects)
+    if cursor_file.exists():
+        last_pos = int(cursor_file.read_text().strip())
+    else:
+        # First run: skip any pre-existing messages
+        last_pos = outbox.stat().st_size
 
     while True:
         await asyncio.sleep(0.5)
@@ -124,6 +131,7 @@ async def watch_outbox(ws, agent_id, agent_dir):
                         await ws.send(json.dumps(wire_msg))
                         log(agent_id, f"SENT to {msg['to']}: {msg['message'][:100]}")
                     last_pos = f.tell()
+                    cursor_file.write_text(str(last_pos))
         except (FileNotFoundError, json.JSONDecodeError):
             pass
 
@@ -140,6 +148,7 @@ async def run_agent(agent_id, label, color):
     status_file.write_text("connecting")
 
     peers = {}
+    seen_messages = set()  # Dedup inbound messages across reconnects
     token = read_creds()
     profile_uuid = get_profile_uuid(token)
     ws_url = f"wss://bridge.claudeusercontent.com/v2/conductor/{profile_uuid}"
@@ -234,6 +243,11 @@ async def run_agent(agent_id, label, color):
                         elif msg_type == "conductor_message":
                             from_id = data.get("from", "?")
                             message = data.get("message", "")
+                            # Dedup: hash sender + message content
+                            msg_key = f"{from_id}:{hash(message)}"
+                            if msg_key in seen_messages:
+                                continue
+                            seen_messages.add(msg_key)
                             entry = {
                                 "ts": time.time(),
                                 "from": from_id,
