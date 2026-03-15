@@ -4,3 +4,5 @@ export { startTriggerLoop, type TriggerLoopOptions } from "./trigger-loop.js";
 export { ContextQueue, type ContextQueueOptions, type LanePolicy } from "./context-queue.js";
 export { startDaemon, type DaemonOptions, type DaemonHandle } from "./daemon.js";
 export { startConductorTrigger, type ConductorTriggerOptions } from "./trigger-conductor.js";
+export { resolveSpawn, type RouterOptions } from "./router.js";
+export { startCronTrigger, type CronSchedule, type CronTriggerOptions } from "./trigger-cron.js";

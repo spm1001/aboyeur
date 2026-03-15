@@ -140,11 +140,21 @@ The daemon core plumbing is complete and tested:
 
 **Token refresh.** CC's OAuth token expires every ~24h. The bridge needs to detect expiry and re-read from `.credentials.json` (CC handles refresh internally). Not hard, but untested.
 
+## Operational Lessons (15 Mar 2026)
+
+**The mesh peer list is trustworthy.** If an agent appears, it has a live WebSocket connection somewhere. What looks like "stale entries" is almost always zombie bridge processes from inadequate cleanup — not a server-side bug. The mesh server is accurate; your process management is the variable. Don't chase server-side TTLs; fix your cleanup.
+
+**events.jsonl is the primary debugging tool** for all mesh work. Adding it took 5 minutes; it immediately revealed wire-level details (Office Claudes send `fileName` and `documentUrl` in status broadcasts, `appName` maps to `schema.label`). Future aby-dawugu work should start by examining traces rather than theorising.
+
+**PTY injection is the fragile layer.** Long messages fragment above PIPE_BUF. The wrapper must gate injection on prompt-idle state (Enter keypress + 10s quiet). Autonomous (unattended) sessions need a separate injection mode with no human-presence assumptions. This is what aby-denewo addresses.
+
+**"Agent not found" is a normal operational error** — it crashed both Mac and hezza bridges independently before we added the error listener. The bridge's error handling was the most impactful fix of the 14-15 Mar mesh sessions.
+
 ## Landmines
 
 - `bon list` via Bash collapses output >10 lines in CC. Always read bon.txt and output as text.
 - The conductor mesh requires `_agent_id` on all client messages EXCEPT pings. Pings must NOT include `_agent_id` from Node.js. Broadcasts MUST include it. Getting this wrong causes `"Multiplexed messages require _agent_id"` errors.
 - Bridge reconnections replay all buffered events — the TS bridge deduplicates via `msgKey = fromId + ":" + message` set.
 - `tools/mesh` CLI is generated at runtime by mesh-claude.py and gitignored — don't look for it in the repo.
-- `npx tsx` spawns a 4-process chain (npx → sh → node tsx → node). The bridge must be started with `preexec_fn=os.setsid` and killed with `os.killpg()` or orphans will persist on the mesh and cause reconnection storms ("Superseded by new connection" every ~1s).
+- `npx tsx` spawns a 4-process chain (npx → sh → node tsx → node). The bridge must be started with `preexec_fn=os.setsid` and killed with `os.killpg()` or orphans will persist on the mesh and cause reconnection storms ("Superseded by new connection" every ~1s). Ad-hoc bridge spawning (tests, manual experiments) must follow the same pattern — any bare `kill $PID` only kills the top process and litters the mesh with ghosts.
 - The raw-bundle/ directory in claude-in-office is gitignored — bundle files, API requests, conductor traces are LOCAL ONLY on Hezza.

@@ -1,0 +1,39 @@
+# Aboyeur daemon — systemd user unit
+#
+# Install:
+#   mkdir -p ~/.config/systemd/user
+#   cp service/aboyeur-daemon.service ~/.config/systemd/user/
+#   systemctl --user daemon-reload
+#   systemctl --user enable --now aboyeur-daemon
+#
+# Logs:
+#   journalctl --user -u aboyeur-daemon -f
+
+[Unit]
+Description=Aboyeur daemon — trigger watcher and agent spawner
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/Repos/aboyeur
+ExecStart=/usr/bin/node dist/main.js
+Restart=on-failure
+RestartSec=5
+
+# Environment
+Environment=NODE_ENV=production
+Environment=ABOYEUR_DB_PATH=%h/.local/share/aboyeur/triggers.db
+Environment=ABOYEUR_DIR=%h/Repos/aboyeur
+
+# Resource limits
+MemoryMax=512M
+TasksMax=50
+
+# Logging — stdout/stderr go to journald
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=aboyeur
+
+[Install]
+WantedBy=default.target
