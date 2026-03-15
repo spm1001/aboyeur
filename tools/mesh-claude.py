@@ -12,7 +12,7 @@ Architecture:
   │  mesh-claude                         │
   │  ┌──────────┐   ┌────────────────┐   │
   │  │ Terminal  │   │ conductor-     │   │
-  │  │ I/O pass- │   │ bridge.py      │   │
+  │  │ I/O pass- │   │ bridge.ts      │   │
   │  │ through   │   │ (sidecar)      │   │
   │  └─────┬─────┘   └──────┬────────┘   │
   │        │     PTY master  │            │
@@ -54,13 +54,20 @@ import time
 import tty
 from pathlib import Path
 
-BRIDGE_SCRIPT = Path(__file__).parent / "conductor-bridge.py"
+BRIDGE_SCRIPT = Path(__file__).parent.parent / "src" / "conductor-bridge.ts"
 
 
 def derive_identity():
-    """Derive mesh identity from current directory (repo name)."""
+    """Derive mesh identity from current directory with unique suffix.
+
+    Pattern mirrors Office Claudes: excel-d49606, powerpoint-b483e7.
+    We produce: cc-aboyeur-a3f9e2, cc-trousse-7b1d04.
+    """
     repo_name = Path.cwd().name.lower().replace(" ", "-")
-    return f"cc-{repo_name}", f"{Path.cwd().name} (CC)"
+    suffix = os.urandom(3).hex()  # 6 hex chars, ~16M combinations
+    agent_id = f"cc-{repo_name}-{suffix}"
+    label = f"{Path.cwd().name} (CC)"
+    return agent_id, label
 
 
 def install_mesh_cli(tools_dir):
@@ -134,16 +141,28 @@ esac
 
 def main():
     parser = argparse.ArgumentParser(description="mesh-claude: PTY wrapper with conductor mesh")
-    parser.add_argument("--agent-id", help="Mesh identity (default: cc-{repo-name})")
+    parser = argparse.ArgumentParser(description="mesh-claude: PTY wrapper with conductor mesh")
+    parser.add_argument("--agent-id", help="Mesh identity (default: auto-generated cc-{repo}-{hex})")
     parser.add_argument("--label", help="Display name")
     parser.add_argument("--color", default="#7719AA", help="Hex color")
     parser.add_argument("--no-mesh", action="store_true", help="Skip mesh connection")
-    args = parser.parse_args()
+    args, claude_args = parser.parse_known_args()  # unknown flags pass through to claude
 
     default_id, default_label = derive_identity()
     agent_id = args.agent_id or default_id
     label = args.label or default_label
     color = args.color
+    # Display name shown to peers in "Connected files".
+    # Extract the short suffix from agent_id for display: cc-aboyeur-a3f9e2 → "aboyeur (a3f9e2)"
+    repo_name = Path.cwd().name
+    repo_prefix = f"cc-{repo_name.lower().replace(' ', '-')}-"
+    if agent_id.startswith(repo_prefix):
+        short_suffix = agent_id[len(repo_prefix):]
+        display_name = f"{repo_name} ({short_suffix})"
+    elif agent_id.removeprefix("cc-").lower() == repo_name.lower():
+        display_name = repo_name
+    else:
+        display_name = f"{repo_name} ({agent_id.removeprefix('cc-')})"
 
     bridge_dir = Path(f"/tmp/conductor-bridge/{agent_id}")
     tools_dir = Path(__file__).parent
@@ -165,7 +184,7 @@ def main():
     env["PATH"] = f"{tools_dir}:{env.get('PATH', '')}"
 
     proc = subprocess.Popen(
-        ["claude"],
+        ["claude"] + claude_args,
         stdin=slave_fd,
         stdout=slave_fd,
         stderr=slave_fd,
@@ -199,9 +218,11 @@ def main():
 
         bridge_log = bridge_dir / "bridge.log"
         bridge_proc = subprocess.Popen(
-            ["uv", "run", "--script", str(BRIDGE_SCRIPT), agent_id, label, color],
+            ["npx", "tsx", str(BRIDGE_SCRIPT), agent_id, label, color, display_name],
             stdout=open(bridge_log, "w"),
             stderr=subprocess.STDOUT,
+            cwd=BRIDGE_SCRIPT.parent.parent,  # repo root, for node_modules resolution
+            preexec_fn=os.setsid,  # own process group so cleanup kills the whole npx→node chain
         )
 
     # --- Injection socket (for manual/external injection) ---
@@ -247,8 +268,31 @@ def main():
         stdin_fd = sys.stdin.fileno()
         stdout_fd = sys.stdout.fileno()
         last_inbox_check = 0
+        start_time = time.time()
+        mesh_orientation_sent = not bool(inbox_path)  # skip if no mesh
 
         while proc.poll() is None:
+            # Inject mesh orientation after CC has had time to render its TUI (~4s)
+            if not mesh_orientation_sent and time.time() - start_time > 4:
+                mesh_orientation_sent = True
+                # Build peer list from bridge's peers.json
+                peer_summary = ""
+                try:
+                    peers = json.loads((bridge_dir / "peers.json").read_text())
+                    if peers:
+                        names = [f"{pid} ({info.get('file') or info.get('label', '?')})"
+                                 for pid, info in peers.items()]
+                        peer_summary = f" Peers online: {', '.join(names)}."
+                except (FileNotFoundError, json.JSONDecodeError):
+                    pass
+                orient = (
+                    f"[mesh connected as {agent_id}]"
+                    f" Commands: mesh send <id> \"msg\", mesh peers, mesh inbox, mesh status."
+                    f"{peer_summary}"
+                )
+                os.write(master_fd, orient.encode())
+                time.sleep(0.05)
+                os.write(master_fd, b"\r")
             try:
                 rlist, _, _ = select.select([stdin_fd, master_fd], [], [], 0.25)
             except (select.error, ValueError, InterruptedError):
@@ -306,13 +350,21 @@ def main():
             termios.tcsetattr(sys.stdin, termios.TCSADRAIN, old_attrs)
         os.close(master_fd)
 
-        # Clean up bridge sidecar
+        # Clean up bridge sidecar (kill process group, not just top PID —
+        # npx tsx spawns a chain: npx → sh → node tsx → node, and killing
+        # only the top leaves orphans on the mesh)
         if bridge_proc and bridge_proc.poll() is None:
-            bridge_proc.terminate()
+            try:
+                os.killpg(os.getpgid(bridge_proc.pid), signal.SIGTERM)
+            except (ProcessLookupError, PermissionError):
+                bridge_proc.terminate()
             try:
                 bridge_proc.wait(timeout=3)
             except subprocess.TimeoutExpired:
-                bridge_proc.kill()
+                try:
+                    os.killpg(os.getpgid(bridge_proc.pid), signal.SIGKILL)
+                except (ProcessLookupError, PermissionError):
+                    bridge_proc.kill()
 
         # Clean up socket
         try:

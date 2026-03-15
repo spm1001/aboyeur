@@ -4,3 +4,4 @@
 # Node / TypeScript
 node_modules/
 dist/
+tools/mesh

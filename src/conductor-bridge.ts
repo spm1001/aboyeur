@@ -37,6 +37,7 @@ export interface PeerInfo {
   label: string;
   app: string;
   color: string;
+  file?: string;
 }
 
 export interface InboxMessage {
@@ -52,6 +53,8 @@ export interface BridgeOptions {
   bridgeDir?: string;
   /** Log to file instead of stdout. */
   logFile?: string;
+  /** Human-readable name shown in "Connected files" on Office peers (e.g. repo name). */
+  fileName?: string;
 }
 
 interface BridgeEvents {
@@ -79,6 +82,7 @@ export class ConductorBridge extends EventEmitter<BridgeEvents> {
   private readonly color: string;
   private readonly bridgeDir: string;
   private readonly logFile: string | null;
+  private readonly fileName: string | null;
 
   private ws: WebSocket | null = null;
   private closed = false;
@@ -95,6 +99,7 @@ export class ConductorBridge extends EventEmitter<BridgeEvents> {
     this.color = opts.color ?? "#7719AA";
     this.bridgeDir = opts.bridgeDir ?? join(DEFAULT_BRIDGE_DIR, opts.agentId);
     this.logFile = opts.logFile ?? null;
+    this.fileName = opts.fileName ?? null;
 
     // Ensure bridge directory exists
     mkdirSync(this.bridgeDir, { recursive: true });
@@ -132,6 +137,7 @@ export class ConductorBridge extends EventEmitter<BridgeEvents> {
       _agent_id: this.agentId,
     };
     this.ws.send(JSON.stringify(wireMsg));
+    this.logEvent("send", wireMsg);
     this.log(`SENT to ${to}: ${message.slice(0, 100)}`);
   }
 
@@ -182,7 +188,7 @@ export class ConductorBridge extends EventEmitter<BridgeEvents> {
         agentId: this.agentId,
         schema: {
           instructions: `I am ${this.label}, a Claude Code agent. Send me a task or message and I will respond.`,
-          appName: "claude-code",
+          appName: this.fileName ?? "claude-code",
           version: "2",
           interface: "Claude Code",
           capabilities: {
@@ -194,6 +200,7 @@ export class ConductorBridge extends EventEmitter<BridgeEvents> {
         oauth_token: token,
       };
       ws.send(JSON.stringify(reg));
+      this.logEvent("send", { ...reg, oauth_token: "(redacted)" });
       this.log("Registration sent");
 
       // Start ping and outbox timers
@@ -207,6 +214,7 @@ export class ConductorBridge extends EventEmitter<BridgeEvents> {
       } catch {
         return;
       }
+      this.logEvent("recv", msg);
       this.handleMessage(msg);
     });
 
@@ -240,6 +248,10 @@ export class ConductorBridge extends EventEmitter<BridgeEvents> {
 
       case "conductor_replay_complete":
         this.log(`Replay complete (${data.events_replayed ?? 0} events)`);
+        // Broadcast our file/repo name so Office peers show it in "Connected files"
+        if (this.fileName) {
+          this.broadcastStatus({ fileName: this.fileName });
+        }
         break;
 
       case "conductor_event": {
@@ -374,6 +386,7 @@ export class ConductorBridge extends EventEmitter<BridgeEvents> {
               _agent_id: this.agentId,
             };
             ws.send(JSON.stringify(wireMsg));
+            this.logEvent("send", wireMsg);
             this.log(`SENT to ${msg.to}: ${(msg.message as string).slice(0, 100)}`);
           } else {
             this.log(`QUEUED (not connected): ${msg.to}`);
@@ -387,6 +400,15 @@ export class ConductorBridge extends EventEmitter<BridgeEvents> {
     }
   }
 
+  /** Broadcast status payload to all peers (mirrors Office Claude's fileName broadcast). */
+  private broadcastStatus(payload: Record<string, unknown>): void {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
+    const msg = { type: "conductor_broadcast_status", payload, _agent_id: this.agentId };
+    this.ws.send(JSON.stringify(msg));
+    this.logEvent("send", msg);
+    this.log(`Broadcast status: ${JSON.stringify(payload)}`);
+  }
+
   // --- Private: file I/O ---
 
   private writeStatus(status: string): void {
@@ -395,6 +417,14 @@ export class ConductorBridge extends EventEmitter<BridgeEvents> {
 
   private writePeers(): void {
     writeFileSync(join(this.bridgeDir, "peers.json"), JSON.stringify(this.peers, null, 2));
+  }
+
+  /** Append raw event to events.jsonl — full protocol trace for debugging. */
+  private logEvent(direction: "send" | "recv", data: any): void {
+    // Skip pings/pongs — they'd flood the log at 25s intervals
+    if (data.type === "ping" || data.type === "pong") return;
+    const entry = { ts: Date.now() / 1000, dir: direction, ...data };
+    appendFileSync(join(this.bridgeDir, "events.jsonl"), JSON.stringify(entry) + "\n");
   }
 
   private log(msg: string): void {
@@ -414,16 +444,18 @@ if (process.argv[1]?.endsWith("conductor-bridge.ts") || process.argv[1]?.endsWit
   const agentId = process.argv[2];
   const label = process.argv[3];
   const color = process.argv[4] ?? "#7719AA";
+  const fileName = process.argv[5] ?? undefined;
 
   if (!agentId || !label) {
-    console.error(`Usage: ${process.argv[1]} <agent_id> <label> [<color>]`);
+    console.error(`Usage: ${process.argv[1]} <agent_id> <label> [<color>] [<fileName>]`);
     console.error(`  agent_id: unique identifier (e.g. cc-aboyeur)`);
     console.error(`  label: display name (e.g. 'Aboyeur (CC)')`);
     console.error(`  color: hex color (default: #7719AA)`);
+    console.error(`  fileName: repo/project name shown to peers (e.g. 'aboyeur')`);
     process.exit(1);
   }
 
-  const bridge = new ConductorBridge({ agentId, label, color });
+  const bridge = new ConductorBridge({ agentId, label, color, fileName });
   bridge.connect().catch((err) => {
     console.error(`Failed to connect: ${err}`);
     process.exit(1);
