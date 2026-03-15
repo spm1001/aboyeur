@@ -121,9 +121,8 @@ export class ConductorBridge extends EventEmitter<BridgeEvents> {
 
   async connect(): Promise<void> {
     if (this.closed) return;
-    const { token, wsUrl } = await this.resolveAuth();
     this.log("Connecting to conductor mesh...");
-    this.attemptConnect(token, wsUrl);
+    await this.resolveAndConnect();
   }
 
   send(to: string, message: string): void {
@@ -159,6 +158,19 @@ export class ConductorBridge extends EventEmitter<BridgeEvents> {
 
   // --- Private: connection lifecycle ---
 
+  /** Resolve fresh credentials and connect. Called on initial connect AND every reconnect. */
+  private async resolveAndConnect(): Promise<void> {
+    if (this.closed) return;
+    try {
+      const { token, wsUrl } = await this.resolveAuth();
+      this.attemptConnect(token, wsUrl);
+    } catch (err: any) {
+      this.log(`Auth failed: ${err.message}. Retrying in ${RECONNECT_DELAY_MS}ms...`);
+      this.writeStatus("reconnecting");
+      setTimeout(() => this.resolveAndConnect(), RECONNECT_DELAY_MS);
+    }
+  }
+
   private async resolveAuth(): Promise<{ token: string; wsUrl: string }> {
     let creds: { claudeAiOauth: { accessToken: string } };
     if (platform() === "darwin") {
@@ -179,6 +191,12 @@ export class ConductorBridge extends EventEmitter<BridgeEvents> {
     const resp = await fetch("https://api.anthropic.com/api/oauth/profile", {
       headers: { Authorization: `Bearer ${token}` },
     });
+    if (resp.status === 401 || resp.status === 403) {
+      throw new Error(`Profile API returned ${resp.status} — token may be expired`);
+    }
+    if (!resp.ok) {
+      throw new Error(`Profile API returned ${resp.status}: ${resp.statusText}`);
+    }
     const profile = (await resp.json()) as { account: { uuid: string } };
     const uuid = profile.account.uuid;
 
@@ -240,8 +258,16 @@ export class ConductorBridge extends EventEmitter<BridgeEvents> {
       this.emit("disconnected");
 
       if (!this.closed) {
+        // Auth-related closes (4001, 4003) or server-initiated (1008 policy violation)
+        // get a longer delay to let CC refresh the token in Keychain
+        const isAuthClose = code === 4001 || code === 4003 || code === 1008;
+        const delay = isAuthClose ? RECONNECT_DELAY_MS * 5 : RECONNECT_DELAY_MS;
+        if (isAuthClose) {
+          this.log(`Auth-related close (${code}). Waiting ${delay}ms for token refresh...`);
+        }
         this.writeStatus("reconnecting");
-        setTimeout(() => this.attemptConnect(token, wsUrl), RECONNECT_DELAY_MS);
+        this.log("Reconnecting with fresh credentials...");
+        setTimeout(() => this.resolveAndConnect(), delay);
       }
     });
 
@@ -481,6 +507,10 @@ if (process.argv[1]?.endsWith("conductor-bridge.ts") || process.argv[1]?.endsWit
   }
 
   const bridge = new ConductorBridge({ agentId, label, color, fileName });
+  bridge.on("error", (err) => {
+    // Log but don't crash — errors like "Agent not found" are recoverable
+    console.error(`[bridge error] ${err}`);
+  });
   bridge.connect().catch((err) => {
     console.error(`Failed to connect: ${err}`);
     process.exit(1);
