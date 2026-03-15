@@ -56,19 +56,25 @@ This is an architectural insight about how Claudes treat information differently
 
 The mesh doesn't replace the authority channel. They coexist with different purposes. Routing the wrong kind of communication through the wrong channel produces either sycophancy (authority where honesty was needed) or ignored feedback (peer where authority was needed).
 
-## The Conductor Mesh (proven 14 Mar 2026)
+## The Conductor Mesh (proven 14-15 Mar 2026)
 
 CC instances can register on Anthropic's production conductor mesh — the same mesh Office Claudes use. OAuth authentication works with CC's existing token from `~/.claude/.credentials.json`. No additional auth setup needed.
+
+**How to use:** `claude-mesh` from any repo. Auto-generates a unique agent ID (`cc-{repo}-{hex6}`), connects to the mesh, injects a startup orientation so CC knows its commands and peers. All `claude` flags pass through (`claude-mesh -c` works).
 
 **What works today:**
 - Registration, peer discovery, bidirectional messaging
 - CC agents appear alongside Office agents (Excel, PowerPoint, Word)
-- File-based bridge: background WebSocket process, inbox/outbox via JSONL files
-- Two CC sessions held a multi-turn conversation through the mesh
-- **PTY wrapper injects mesh messages into live interactive CC sessions** — transparent pass-through of real CC TUI with injection via PTY master fd. Text + delayed `\r` for auto-submit. Spike tested 14-15 Mar 2026.
-- `mesh` CLI for outbound: `mesh send <id> "message"`, `mesh peers`, `mesh inbox`
-- **TypeScript bridge replaces Python bridge** — Python WebSocket libraries all fail with "Stale connection (no pong)" after ~60s. Node.js `ws` works perfectly. `src/conductor-bridge.ts` is the production bridge. Critical: pings must be `{"type":"ping"}` without `_agent_id` (Node.js only).
-- **Cross-harness messaging proven** — Excel Librarian and CC sessions exchanged multi-turn messages through the production mesh (15 Mar 2026).
+- TypeScript bridge (`src/conductor-bridge.ts`) — Node.js `ws` required; Python WebSocket libraries fail after ~60s
+- PTY wrapper (`tools/mesh-claude.py`) injects mesh messages into live interactive CC sessions
+- `mesh` CLI (generated at runtime, in PATH): `mesh send <id> "msg"`, `mesh peers`, `mesh inbox`, `mesh status`
+- Auto-naming: each session gets a unique ID and display name visible to peers in Office's "Connected files"
+- Startup orientation: CC is told its commands and online peers immediately after boot
+- Structured event log (`events.jsonl`): full protocol trace of every non-ping message, with rotation at 1MB
+- Process group cleanup: `os.setsid` + `os.killpg()` kills entire npx→node chain on shutdown
+- Cross-harness messaging: Excel Librarian, PowerPoint, and CC sessions all communicate through the same mesh
+
+**Display name precedence (non-obvious):** The Office "Connected files" panel shows `schema.label` (mapped from `appName` in the registration, NOT `display.label`). The `conductor_broadcast_status` message with `fileName` also updates the display. `display.label` is peer metadata only.
 
 **What the mesh gives the architecture:**
 - Cross-machine agent discovery (CC on Pi sees CC on Mac)
@@ -137,6 +143,8 @@ The daemon core plumbing is complete and tested:
 ## Landmines
 
 - `bon list` via Bash collapses output >10 lines in CC. Always read bon.txt and output as text.
-- The conductor mesh requires `_agent_id` on all messages in multiplexed mode, including pings. Omitting it causes disconnection.
-- Bridge reconnections replay all buffered events, causing duplicate messages. Need cursor tracking or dedup.
-- The raw-bundle/ directory in claude-in-office is gitignored — bundle files, API requests, conductor traces are LOCAL ONLY on Hezza (the server with the repos). The Mac has Chrome Passe where the live conductor was observed.
+- The conductor mesh requires `_agent_id` on all client messages EXCEPT pings. Pings must NOT include `_agent_id` from Node.js. Broadcasts MUST include it. Getting this wrong causes `"Multiplexed messages require _agent_id"` errors.
+- Bridge reconnections replay all buffered events — the TS bridge deduplicates via `msgKey = fromId + ":" + message` set.
+- `tools/mesh` CLI is generated at runtime by mesh-claude.py and gitignored — don't look for it in the repo.
+- `npx tsx` spawns a 4-process chain (npx → sh → node tsx → node). The bridge must be started with `preexec_fn=os.setsid` and killed with `os.killpg()` or orphans will persist on the mesh and cause reconnection storms ("Superseded by new connection" every ~1s).
+- The raw-bundle/ directory in claude-in-office is gitignored — bundle files, API requests, conductor traces are LOCAL ONLY on Hezza.

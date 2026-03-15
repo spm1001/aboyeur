@@ -419,12 +419,23 @@ export class ConductorBridge extends EventEmitter<BridgeEvents> {
     writeFileSync(join(this.bridgeDir, "peers.json"), JSON.stringify(this.peers, null, 2));
   }
 
-  /** Append raw event to events.jsonl — full protocol trace for debugging. */
+  /** Append raw event to events.jsonl — full protocol trace for debugging.
+   *  Rotates when file exceeds 1MB: events.jsonl → events.jsonl.1 (one backup). */
   private logEvent(direction: "send" | "recv", data: any): void {
     // Skip pings/pongs — they'd flood the log at 25s intervals
     if (data.type === "ping" || data.type === "pong") return;
+    const eventsPath = join(this.bridgeDir, "events.jsonl");
     const entry = { ts: Date.now() / 1000, dir: direction, ...data };
-    appendFileSync(join(this.bridgeDir, "events.jsonl"), JSON.stringify(entry) + "\n");
+    appendFileSync(eventsPath, JSON.stringify(entry) + "\n");
+    // Rotate if over 1MB (check every write is cheap for append-only)
+    try {
+      if (statSync(eventsPath).size > 1_048_576) {
+        const backupPath = eventsPath + ".1";
+        writeFileSync(backupPath, readFileSync(eventsPath));
+        writeFileSync(eventsPath, "");
+        this.log("Rotated events.jsonl (>1MB)");
+      }
+    } catch { /* race with other readers — safe to skip */ }
   }
 
   private log(msg: string): void {
