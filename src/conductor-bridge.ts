@@ -27,8 +27,9 @@
 
 import WebSocket from "ws";
 import { readFileSync, writeFileSync, appendFileSync, mkdirSync, existsSync, statSync } from "node:fs";
+import { execSync } from "node:child_process";
 import { join } from "node:path";
-import { homedir } from "node:os";
+import { homedir, platform } from "node:os";
 import { EventEmitter } from "node:events";
 
 // --- Types ---
@@ -159,7 +160,20 @@ export class ConductorBridge extends EventEmitter<BridgeEvents> {
   // --- Private: connection lifecycle ---
 
   private async resolveAuth(): Promise<{ token: string; wsUrl: string }> {
-    const creds = JSON.parse(readFileSync(CREDS_PATH, "utf-8"));
+    let creds: { claudeAiOauth: { accessToken: string } };
+    if (platform() === "darwin") {
+      // macOS: CC stores credentials in Keychain, not on disk
+      const raw = execSync(
+        'security find-generic-password -s "Claude Code-credentials" -w',
+        { encoding: "utf-8" },
+      ).trim();
+      creds = JSON.parse(raw);
+      this.log("Auth: read from macOS Keychain");
+    } else {
+      // Linux: CC stores credentials as a flat JSON file
+      creds = JSON.parse(readFileSync(CREDS_PATH, "utf-8"));
+      this.log("Auth: read from credentials file");
+    }
     const token: string = creds.claudeAiOauth.accessToken;
 
     const resp = await fetch("https://api.anthropic.com/api/oauth/profile", {
