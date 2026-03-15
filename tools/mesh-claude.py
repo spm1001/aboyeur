@@ -269,6 +269,11 @@ def main():
         last_inbox_check = 0
         start_time = time.time()
         mesh_orientation_sent = not bool(inbox_path)  # skip if no mesh
+        last_prompt_seen = 0.0    # when CC last showed an idle prompt
+        last_user_input = 0.0     # when user last typed something
+        last_key_was_enter = False # whether the last keystroke was Enter
+        PROMPT_IDLE_MIN = 0.2     # wait 200ms after prompt before injecting
+        USER_QUIET_MIN = 10.0     # wait 10s after last user keystroke
 
         while proc.poll() is None:
             # Inject mesh orientation after CC has had time to render its TUI (~4s)
@@ -303,6 +308,8 @@ def main():
                 if not data:
                     break
                 os.write(master_fd, data)
+                last_user_input = time.time()
+                last_key_was_enter = data.endswith(b"\r") or data.endswith(b"\n")
 
             # CC → Terminal (transparent pass-through)
             if master_fd in rlist:
@@ -311,16 +318,33 @@ def main():
                     if not data:
                         break
                     os.write(stdout_fd, data)
+                    # Detect CC's idle prompt: ❯ (U+276F) or "> " at line start.
+                    # When CC is ready for input, it renders the prompt character.
+                    # We track this to gate message injection.
+                    if b"\xe2\x9d\xaf" in data or b"\n> " in data or b"\r> " in data:
+                        last_prompt_seen = time.time()
                 except OSError:
                     break
 
             # Poll inbox for mesh messages (every 0.5s)
+            # Only inject when CC is at an idle prompt and user isn't typing.
+            # This prevents: message landing mid-response, colliding with
+            # user typing ([Pasted Text] marker), or hitting a survey prompt.
             now = time.time()
+            prompt_age = now - last_prompt_seen
+            user_quiet = now - last_user_input
+            prompt_is_idle = (prompt_age > PROMPT_IDLE_MIN)
+            user_is_quiet = (user_quiet > USER_QUIET_MIN) and last_key_was_enter
+
             if inbox_path and now - last_inbox_check > 0.5:
                 last_inbox_check = now
                 try:
                     size = inbox_path.stat().st_size
                     if size > inbox_pos:
+                        if not (prompt_is_idle and user_is_quiet):
+                            # Messages waiting but CC isn't idle — skip this
+                            # poll cycle, we'll pick them up next time.
+                            continue
                         with open(inbox_path) as f:
                             f.seek(inbox_pos)
                             for line in f:
@@ -330,12 +354,6 @@ def main():
                                 msg = json.loads(line)
                                 sender = msg.get("from", "unknown")
                                 text = msg.get("message", "").replace("\n", " ")
-                                # Inject using bracketed paste + Enter.
-                                # Bracketed paste (\x1b[200~ ... \x1b[201~) tells
-                                # CC's TUI to insert text literally, not interpret
-                                # characters as commands. \r after paste-end submits.
-                                # If a permission prompt has focus, the paste is
-                                # likely ignored (graceful degradation).
                                 content = f"[mesh from {sender}] {text}"
                                 os.write(master_fd, content.encode())
                                 time.sleep(0.05)
