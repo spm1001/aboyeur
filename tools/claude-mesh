@@ -1,0 +1,7 @@
+#!/bin/bash
+# claude-mesh — launch Claude Code with conductor mesh integration
+# Just run from any repo: claude-mesh
+# Symlink to ~/.local/bin/claude-mesh for PATH access
+REAL_PATH="$(readlink -f "${BASH_SOURCE[0]}")"
+SCRIPT_DIR="$(dirname "$REAL_PATH")"
+exec uv run --script "$SCRIPT_DIR/mesh-claude.py" "$@"
