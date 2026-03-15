@@ -3,3 +3,4 @@ export { TriggerDB, type Trigger, type TriggerStatus, type InsertTriggerOpts } f
 export { startTriggerLoop, type TriggerLoopOptions } from "./trigger-loop.js";
 export { ContextQueue, type ContextQueueOptions, type LanePolicy } from "./context-queue.js";
 export { startDaemon, type DaemonOptions, type DaemonHandle } from "./daemon.js";
+export { startConductorTrigger, type ConductorTriggerOptions } from "./trigger-conductor.js";
