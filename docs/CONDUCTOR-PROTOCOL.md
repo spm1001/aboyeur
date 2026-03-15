@@ -181,13 +181,13 @@ Messages sent to an agent that is not connected are **silently dropped**. No err
 
 **Implication:** Daemon can freely spawn multiple bridges (PM, workers, reflectors) without worrying about connection limits.
 
-### Graceful deregistration: PARTIALLY WORKS
+### Graceful deregistration: WORKS (corrected)
 
-Sending SIGTERM to the bridge process triggers `ws.close()`, which causes the mesh server to emit `conductor_agent_offline` to CC peers. However, **Office "Connected files" panels retain stale entries** even after clean disconnection — observed via Excel screenshot showing 12 dead test agents still listed. Either Office caches aggressively, or `ws.close()` doesn't reliably propagate to all peer types.
+Sending SIGTERM to the bridge process triggers `ws.close()`, which causes the mesh server to emit `conductor_agent_offline` to peers. Agents disappear from peer lists promptly.
 
-Hard-killing the process (SIGKILL, or kill without signal handler) leaves stale peers everywhere. `mesh-claude.py`'s `os.killpg(SIGTERM)` pattern is better than nothing but not a complete solution.
+**Earlier misdiagnosis:** Excel's "Connected files" showed 12 "stale" test agents. This was initially attributed to incomplete deregistration. The real cause: the test scripts used bare `kill` which only killed the top `npx` process, leaving the actual Node.js bridge processes alive with open WebSocket connections. The mesh server was accurate — those agents genuinely were still connected. After `pkill -f "conductor-bridge.ts"` killed all processes, the entries cleared.
 
-**Implication:** Don't rely on peer lists being clean. Build tolerance for stale entries into any peer-discovery logic.
+**Implication:** `mesh-claude.py`'s `os.killpg(SIGTERM)` pattern (process group kill) is correct and necessary. Bare `kill` on `npx tsx` leaves orphan Node.js processes holding mesh registrations open. The mesh peer list is trustworthy — if an agent appears, it has a live WebSocket connection somewhere.
 
 ### Custom agentId format: FREE-FORM
 
