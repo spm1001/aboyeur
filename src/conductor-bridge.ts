@@ -74,6 +74,7 @@ const DEFAULT_BRIDGE_DIR = "/tmp/conductor-bridge";
 const PING_INTERVAL_MS = 25_000;
 const OUTBOX_POLL_MS = 500;
 const RECONNECT_DELAY_MS = 1_000;
+const MAX_RECONNECT_DELAY_MS = 30_000;
 
 // --- ConductorBridge ---
 
@@ -92,6 +93,7 @@ export class ConductorBridge extends EventEmitter<BridgeEvents> {
   private outboxCursor = 0;
   private pingTimer: ReturnType<typeof setInterval> | null = null;
   private outboxTimer: ReturnType<typeof setInterval> | null = null;
+  private reconnectDelay = RECONNECT_DELAY_MS;
 
   constructor(opts: BridgeOptions) {
     super();
@@ -163,11 +165,14 @@ export class ConductorBridge extends EventEmitter<BridgeEvents> {
     if (this.closed) return;
     try {
       const { token, wsUrl } = await this.resolveAuth();
+      this.reconnectDelay = RECONNECT_DELAY_MS; // reset on success
       this.attemptConnect(token, wsUrl);
     } catch (err: any) {
-      this.log(`Auth failed: ${err.message}. Retrying in ${RECONNECT_DELAY_MS}ms...`);
+      const delay = Math.min(this.reconnectDelay, MAX_RECONNECT_DELAY_MS);
+      this.log(`Auth failed: ${err.message}. Retrying in ${delay}ms...`);
       this.writeStatus("reconnecting");
-      setTimeout(() => this.resolveAndConnect(), RECONNECT_DELAY_MS);
+      this.reconnectDelay = Math.min(this.reconnectDelay * 2, MAX_RECONNECT_DELAY_MS);
+      setTimeout(() => this.resolveAndConnect(), delay);
     }
   }
 
@@ -177,7 +182,7 @@ export class ConductorBridge extends EventEmitter<BridgeEvents> {
       // macOS: CC stores credentials in Keychain, not on disk
       const raw = execSync(
         'security find-generic-password -s "Claude Code-credentials" -w',
-        { encoding: "utf-8" },
+        { encoding: "utf-8", timeout: 5000 },
       ).trim();
       creds = JSON.parse(raw);
       this.log("Auth: read from macOS Keychain");
@@ -283,6 +288,7 @@ export class ConductorBridge extends EventEmitter<BridgeEvents> {
       case "conductor_connected":
         this.writeStatus("connected");
         this.log(`Connected! Protocol v${data.protocol_version}`);
+        this.reconnectDelay = RECONNECT_DELAY_MS; // reset backoff on successful connection
         this.emit("connected");
         break;
 
