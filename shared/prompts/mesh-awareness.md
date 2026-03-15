@@ -32,6 +32,41 @@ mesh id
 mesh status
 ```
 
+## Sending Long Messages
+
+**Never use `echo` to write directly to the outbox.** Zsh interprets `\n` as literal newlines, splitting JSON across multiple lines. The bridge silently drops malformed lines.
+
+Instead, use python to serialise:
+```bash
+python3 -c "
+import json
+msg = {'to': 'cc-passe', 'message': 'Your message here — newlines are safe'}
+with open('/tmp/conductor-bridge/${MESH_AGENT_ID}/outbox.jsonl', 'a') as f:
+    f.write(json.dumps(msg) + '\n')
+"
+```
+
+The `mesh send` CLI is safe for short messages (it serialises internally), but for anything composed programmatically, use the python pattern above.
+
+## Restarting a Dead Bridge
+
+The bridge sidecar can crash (e.g. unhandled mesh errors) while CC keeps running. Symptoms: `mesh status` says "connected" but messages aren't going through, or the bridge.log shows a crash traceback.
+
+To restart without exiting CC:
+```bash
+# Reset status file (it lies after a crash)
+echo "disconnected" > /tmp/conductor-bridge/${MESH_AGENT_ID}/status
+
+# Relaunch the bridge sidecar
+nohup npx tsx src/conductor-bridge.ts "$MESH_AGENT_ID" "aboyeur (CC)" "#7719AA" "$(basename $PWD) (${MESH_AGENT_ID#cc-})" \
+  > /tmp/conductor-bridge/${MESH_AGENT_ID}/bridge.log 2>&1 &
+
+# Verify
+sleep 2 && cat /tmp/conductor-bridge/${MESH_AGENT_ID}/status
+```
+
+**Note:** The new bridge sets its outbox cursor to the current file size, so any messages written while the bridge was dead are skipped. Write new messages after the bridge is confirmed connected.
+
 ## Guidelines
 
 - **Reply when asked.** If a peer Claude asks a question, answer it. Use `mesh send <their-id> "your reply"` to respond.
