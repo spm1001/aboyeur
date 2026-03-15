@@ -181,11 +181,13 @@ Messages sent to an agent that is not connected are **silently dropped**. No err
 
 **Implication:** Daemon can freely spawn multiple bridges (PM, workers, reflectors) without worrying about connection limits.
 
-### Graceful deregistration: WORKS via ws.close()
+### Graceful deregistration: PARTIALLY WORKS
 
-Sending SIGTERM to the bridge process triggers `ws.close()`, which causes the mesh server to emit `conductor_agent_offline` to peers. The agent disappears from peer lists promptly.
+Sending SIGTERM to the bridge process triggers `ws.close()`, which causes the mesh server to emit `conductor_agent_offline` to CC peers. However, **Office "Connected files" panels retain stale entries** even after clean disconnection — observed via Excel screenshot showing 12 dead test agents still listed. Either Office caches aggressively, or `ws.close()` doesn't reliably propagate to all peer types.
 
-Hard-killing the process (SIGKILL, or kill without signal handler) leaves the agent as a **stale peer** that lingers until the server's connection timeout fires. `mesh-claude.py`'s `os.killpg(SIGTERM)` pattern is correct — gives the bridge time to close cleanly.
+Hard-killing the process (SIGKILL, or kill without signal handler) leaves stale peers everywhere. `mesh-claude.py`'s `os.killpg(SIGTERM)` pattern is better than nothing but not a complete solution.
+
+**Implication:** Don't rely on peer lists being clean. Build tolerance for stale entries into any peer-discovery logic.
 
 ### Custom agentId format: FREE-FORM
 
@@ -208,6 +210,18 @@ Two sessions connected at different times see **different peer lists**. Session 
 **Also observed:** A session's peer list does not always include agents that connected after it. This suggests the mesh server may not always deliver `conductor_agent_online` events to all existing sessions — possibly a race condition or eventual consistency in event propagation.
 
 **Additional finding:** When a mesh message arrives while the user is actively typing in CC's input box, the bracketed paste injection manifests as a `[Pasted Text]` marker in the input. It does not auto-submit, so it's non-destructive, but it does interrupt the typing flow.
+
+### Re-registration with same agentId: WORKS
+
+After a bridge crash, relaunching with the same agentId succeeds. The mesh accepts the new registration without complaint, even while stale entries from the old connection may still be visible to some peers. Messages route to the new connection immediately.
+
+**Implication:** Sidecar auto-restart (aby-miviti) can reuse the same agentId without needing to generate a fresh one.
+
+### "Agent not found" error on send: FATAL (bug)
+
+Sending a message to a nonexistent agentId causes the mesh server to return a `conductor_error` with "Agent not found". The bridge emits this as an `error` event. If no error listener is registered (as in the CLI entry point), Node.js throws an unhandled error and the process crashes.
+
+**Implication:** The bridge must handle `conductor_error` gracefully — log and continue, don't crash. Filed as part of aby-pamiwi (Mac side).
 
 ## What's Not Yet Proven
 
