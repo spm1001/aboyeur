@@ -263,8 +263,11 @@ export class ConductorBridge extends EventEmitter<BridgeEvents> {
       this.emit("disconnected");
 
       if (!this.closed) {
-        // Auth-related closes (4001, 4003) or server-initiated (1008 policy violation)
-        // get a longer delay to let CC refresh the token in Keychain
+        // Auth-related closes: these codes are ASSUMPTIONS, not observed.
+        // As of 2026-03-15 we have never seen an auth-related WS close from
+        // the conductor mesh. 4001/4003 are common WebSocket auth conventions,
+        // 1008 is RFC 6455 policy violation. aby-dawugu should verify these
+        // when testing long-duration token refresh cycles.
         const isAuthClose = code === 4001 || code === 4003 || code === 1008;
         const delay = isAuthClose ? RECONNECT_DELAY_MS * 5 : RECONNECT_DELAY_MS;
         if (isAuthClose) {

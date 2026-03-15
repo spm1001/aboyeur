@@ -276,9 +276,15 @@ def main():
         USER_QUIET_MIN = 10.0     # wait 10s after last user keystroke
 
         while proc.poll() is None:
-            # Inject mesh orientation after CC has had time to render its TUI (~4s)
-            if not mesh_orientation_sent and time.time() - start_time > 4:
+            # Inject mesh orientation once CC has rendered its first prompt.
+            # Waits for prompt detection rather than a fixed timer — safe
+            # regardless of how long CC takes to initialise.
+            if not mesh_orientation_sent and last_prompt_seen > 0 and \
+               time.time() - last_prompt_seen > PROMPT_IDLE_MIN:
                 mesh_orientation_sent = True
+                # Set initial state so subsequent message injection can flow
+                last_key_was_enter = True
+                last_user_input = 0.0
                 # Build peer list from bridge's peers.json
                 peer_summary = ""
                 try:
