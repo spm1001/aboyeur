@@ -96,10 +96,30 @@ All client messages in multiplexed mode require `_agent_id`.
 - Peer discovery works (online/offline events)
 - 28+ buffered events replayed on connect (persisted mesh state)
 
+## Critical: Node.js Required (15 Mar 2026)
+
+**Python WebSocket libraries do NOT work for stable connections.** Tested `websockets` v16, `websocket-client`, and `curl_cffi` (Chrome TLS impersonation) — all get `"Stale connection (no pong)"` after ~60 seconds. The server closes with code 1001.
+
+**Node.js `ws` library works perfectly.** Same token, same headers, same registration — pings get pongs, connection holds indefinitely. The TypeScript bridge at `src/conductor-bridge.ts` replaces the Python bridge.
+
+The root cause is unknown but not TLS fingerprinting (curl_cffi disproved this), not headers (exact browser headers didn't help), not token scopes (CC and Office tokens both work from Node). The server appears to treat connections differently based on the WebSocket client implementation at a level below what we can control in Python.
+
+**Ping format:** Send `{"type":"ping"}` WITHOUT `_agent_id`. From Node.js/browser clients, the server responds with `{"type":"pong"}`. The previous documentation stating `_agent_id` is required on pings was incorrect — that error only occurs from Python clients in "multiplexed mode."
+
+## What's Proven (updated 15 Mar 2026)
+
+- CC's OAuth token (`sk-ant-oat01-*`) authenticates to the conductor mesh
+- Registration succeeds, protocol version 2
+- CC agents appear alongside Office agents (Excel, PowerPoint, Word)
+- Bidirectional messaging works between CC agents and between CC and Office agents
+- Peer discovery works (online/offline events)
+- 28+ buffered events replayed on connect (persisted mesh state)
+- **Stable long-duration connections from Node.js** (100s+ tested, pongs received)
+- **CC session receives mesh messages via PTY injection** (inbox.jsonl → PTY master fd)
+- **Cross-harness messaging** (Excel Librarian ↔ CC session, multi-turn conversation)
+
 ## What's Not Yet Proven
 
-- CC session actually reading inbox and responding (bridge relays files, Claude reads them)
-- Long-duration connection stability (tested ~60s)
 - Token refresh during connection (token expires every ~24h)
 - File sharing through the conductor virtual filesystem
 - Message delivery when target agent is offline (does the mesh queue?)

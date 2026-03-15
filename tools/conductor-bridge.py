@@ -97,8 +97,8 @@ def log(agent_id, msg):
     print(f"[{ts}] [{agent_id}] {msg}", flush=True)
 
 
-async def watch_outbox(ws, agent_id, agent_dir):
-    """Poll outbox file for messages to send."""
+async def watch_outbox(ws, agent_id, agent_dir, error_queue):
+    """Poll outbox file for messages to send. Failed sends go to error_queue for retry."""
     outbox = agent_dir / "outbox.jsonl"
     cursor_file = agent_dir / ".outbox_cursor"
     outbox.touch()
@@ -112,6 +112,26 @@ async def watch_outbox(ws, agent_id, agent_dir):
 
     while True:
         await asyncio.sleep(0.5)
+
+        # Retry any failed messages from previous connection
+        retries = []
+        while not error_queue.empty():
+            retries.append(await error_queue.get())
+        for msg in retries:
+            wire_msg = {
+                "type": "conductor_send_message",
+                "to": msg["to"],
+                "message": msg["message"],
+                "_agent_id": agent_id,
+            }
+            try:
+                await ws.send(json.dumps(wire_msg))
+                log(agent_id, f"RETRY to {msg['to']}: {msg['message'][:100]}")
+            except Exception:
+                error_queue.put_nowait(msg)
+                break
+
+        # Check for new outbox messages
         try:
             size = outbox.stat().st_size
             if size > last_pos:
@@ -128,8 +148,12 @@ async def watch_outbox(ws, agent_id, agent_dir):
                             "message": msg["message"],
                             "_agent_id": agent_id,
                         }
-                        await ws.send(json.dumps(wire_msg))
-                        log(agent_id, f"SENT to {msg['to']}: {msg['message'][:100]}")
+                        try:
+                            await ws.send(json.dumps(wire_msg))
+                            log(agent_id, f"SENT to {msg['to']}: {msg['message'][:100]}")
+                        except Exception:
+                            error_queue.put_nowait(msg)
+                            log(agent_id, f"QUEUED for retry: {msg['to']}")
                     last_pos = f.tell()
                     cursor_file.write_text(str(last_pos))
         except (FileNotFoundError, json.JSONDecodeError):
@@ -149,6 +173,7 @@ async def run_agent(agent_id, label, color):
 
     peers = {}
     seen_messages = set()  # Dedup inbound messages across reconnects
+    error_queue = asyncio.Queue()  # Failed sends survive reconnects
     token = read_creds()
     profile_uuid = get_profile_uuid(token)
     ws_url = f"wss://bridge.claudeusercontent.com/v2/conductor/{profile_uuid}"
@@ -161,8 +186,8 @@ async def run_agent(agent_id, label, color):
             async with websockets.connect(
                 ws_url,
                 additional_headers={"Authorization": f"Bearer {token}"},
-                ping_interval=None,
-                ping_timeout=None,
+                ping_interval=None,  # don't send OUR pings
+                ping_timeout=None,   # don't timeout on missing pongs
                 close_timeout=5,
             ) as ws:
                 # Register
@@ -171,7 +196,7 @@ async def run_agent(agent_id, label, color):
                 log(agent_id, "Registration sent")
 
                 # Background tasks
-                outbox_task = asyncio.create_task(watch_outbox(ws, agent_id, agent_dir))
+                outbox_task = asyncio.create_task(watch_outbox(ws, agent_id, agent_dir, error_queue))
 
                 async def pinger():
                     while True:
@@ -257,6 +282,11 @@ async def run_agent(agent_id, label, color):
                                 f.write(json.dumps(entry) + "\n")
                             log(agent_id, f"MSG from {from_id}: {message[:120]}")
 
+                        elif msg_type == "ping":
+                            # Server pings us — must respond or get disconnected
+                            # ("Stale connection (no pong)" after 60s)
+                            await ws.send(json.dumps({"type": "pong", "_agent_id": agent_id}))
+
                         elif msg_type == "pong":
                             pass
 
@@ -269,6 +299,7 @@ async def run_agent(agent_id, label, color):
                 finally:
                     outbox_task.cancel()
                     ping_task.cancel()
+                    log(agent_id, f"WS closed: code={ws.close_code} reason='{ws.close_reason}'")
                     status_file.write_text("disconnected")
 
         except (websockets.exceptions.ConnectionClosed, OSError) as e:

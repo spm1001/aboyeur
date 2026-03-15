@@ -65,6 +65,10 @@ CC instances can register on Anthropic's production conductor mesh — the same 
 - CC agents appear alongside Office agents (Excel, PowerPoint, Word)
 - File-based bridge: background WebSocket process, inbox/outbox via JSONL files
 - Two CC sessions held a multi-turn conversation through the mesh
+- **PTY wrapper injects mesh messages into live interactive CC sessions** — transparent pass-through of real CC TUI with injection via PTY master fd. Text + delayed `\r` for auto-submit. Spike tested 14-15 Mar 2026.
+- `mesh` CLI for outbound: `mesh send <id> "message"`, `mesh peers`, `mesh inbox`
+- **TypeScript bridge replaces Python bridge** — Python WebSocket libraries all fail with "Stale connection (no pong)" after ~60s. Node.js `ws` works perfectly. `src/conductor-bridge.ts` is the production bridge. Critical: pings must be `{"type":"ping"}` without `_agent_id` (Node.js only).
+- **Cross-harness messaging proven** — Excel Librarian and CC sessions exchanged multi-turn messages through the production mesh (15 Mar 2026).
 
 **What the mesh gives the architecture:**
 - Cross-machine agent discovery (CC on Pi sees CC on Mac)
