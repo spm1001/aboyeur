@@ -92,13 +92,21 @@ PM reads bon state again...
 | `src/trigger-db.ts` | SQLite trigger queue — schema, dedup, cursors, crash recovery | High — daemon state lives here |
 | `src/trigger-loop.ts` | Polling loop that drains the trigger queue | Medium |
 | `src/context-queue.ts` | Per-context FIFO with concurrency limits and lane policies | High — prevents runaway spawning |
+| `src/router.ts` | Trigger → SpawnAgentOptions resolver (session naming, prompt loading) | High — routing brain |
+| `src/trigger-cron.ts` | Interval-based cron triggers (HEARTBEAT) | Medium |
 | `src/daemon.ts` | Wires trigger loop → context queue → spawn (with mock injection for tests) | High — integration point |
-| `src/daemon.test.ts` | Integration tests: full cycle, FIFO, crash recovery, dedup, shutdown | High — validates plumbing |
+| `src/main.ts` | Daemon entry point — wires router, cron, shutdown handlers | High — the executable |
+| `src/conductor-bridge.ts` | WebSocket bridge to Anthropic's conductor mesh | High — mesh infrastructure |
 | `src/index.ts` | Barrel export for daemon modules | Low |
 | `docs/architecture-decisions.md` | Design decisions and rejected alternatives | High — prevents re-derivation |
+| `shared/prompts/aboyeur-open.md` | Aboyeur instructions (routing, session naming) | High — the brain |
+| `shared/prompts/email-triage.md` | One-shot email handling (classify, draft, escalate) | High — email quality |
 | `shared/prompts/reflector-open.md` | Reflector instructions (code/work review) | High — sycophancy risk if weakened |
 | `shared/prompts/planning-reflector.md` | Planning reflector (architecture review) | High — catches assumption errors |
 | `shared/prompts/worker-open.md` | Worker instructions | Medium |
+| `shared/prompts/mesh-awareness.md` | Mesh commands and conventions for CC sessions | Medium |
+| `service/aboyeur-daemon.service` | Systemd user unit for hezza | Medium |
+| `HEARTBEAT.md` | Periodic health check checklist | Low |
 
 ### Reference Implementations (crib from these)
 
