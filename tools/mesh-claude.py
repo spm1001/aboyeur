@@ -141,7 +141,6 @@ esac
 
 def main():
     parser = argparse.ArgumentParser(description="mesh-claude: PTY wrapper with conductor mesh")
-    parser = argparse.ArgumentParser(description="mesh-claude: PTY wrapper with conductor mesh")
     parser.add_argument("--agent-id", help="Mesh identity (default: auto-generated cc-{repo}-{hex})")
     parser.add_argument("--label", help="Display name")
     parser.add_argument("--color", default="#7719AA", help="Hex color")
