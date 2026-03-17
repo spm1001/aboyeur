@@ -145,6 +145,8 @@ def main():
     parser.add_argument("--label", help="Display name")
     parser.add_argument("--color", default="#7719AA", help="Hex color")
     parser.add_argument("--no-mesh", action="store_true", help="Skip mesh connection")
+    parser.add_argument("--walkie-id", help="Walkie-talkie identity (enables local backchannel)")
+    parser.add_argument("--walkie-partner", help="Walkie-talkie partner identity")
     args, claude_args = parser.parse_known_args()  # unknown flags pass through to claude
 
     default_id, default_label = derive_identity()
@@ -175,12 +177,18 @@ def main():
         winsize = fcntl.ioctl(sys.stdin, termios.TIOCGWINSZ, b"\x00" * 8)
         fcntl.ioctl(master_fd, termios.TIOCSWINSZ, winsize)
 
-    # --- Spawn claude with mesh env vars ---
+    # --- Spawn claude with mesh + walkie env vars ---
     env = os.environ.copy()
     env["MESH_AGENT_ID"] = agent_id
     env["MESH_BRIDGE_DIR"] = str(bridge_dir)
-    # Ensure tools/ is in PATH so CC can run `mesh` via Bash
+    # Ensure tools/ is in PATH so CC can run `mesh` and `walkie` via Bash
     env["PATH"] = f"{tools_dir}:{env.get('PATH', '')}"
+    # Walkie-talkie backchannel (local agent-to-agent messaging via PostToolUse hook)
+    if args.walkie_id:
+        env["WALKIE_ID"] = args.walkie_id
+        os.makedirs("/tmp/walkie", exist_ok=True)
+    if args.walkie_partner:
+        env["WALKIE_PARTNER"] = args.walkie_partner
 
     proc = subprocess.Popen(
         ["claude"] + claude_args,
@@ -271,9 +279,9 @@ def main():
         mesh_orientation_sent = not bool(inbox_path)  # skip if no mesh
         last_prompt_seen = 0.0    # when CC last showed an idle prompt
         last_user_input = 0.0     # when user last typed something
-        last_key_was_enter = False # whether the last keystroke was Enter
+        has_uncommitted_input = False  # user has typed something but not pressed Enter
         PROMPT_IDLE_MIN = 0.2     # wait 200ms after prompt before injecting
-        USER_QUIET_MIN = 10.0     # wait 10s after last user keystroke
+        USER_QUIET_MIN = 2.0      # wait 2s after last keystroke (safety margin)
 
         while proc.poll() is None:
             # Inject mesh orientation once CC has rendered its first prompt.
@@ -283,7 +291,7 @@ def main():
                time.time() - last_prompt_seen > PROMPT_IDLE_MIN:
                 mesh_orientation_sent = True
                 # Set initial state so subsequent message injection can flow
-                last_key_was_enter = True
+                has_uncommitted_input = False
                 last_user_input = 0.0
                 # Build peer list from bridge's peers.json
                 peer_summary = ""
@@ -295,10 +303,16 @@ def main():
                         peer_summary = f" Peers online: {', '.join(names)}."
                 except (FileNotFoundError, json.JSONDecodeError):
                     pass
+                walkie_summary = ""
+                if args.walkie_id and args.walkie_partner:
+                    walkie_summary = (
+                        f" Walkie backchannel: walkie send \"msg\" to {args.walkie_partner},"
+                        f" walkie read, walkie log. Messages arrive via PostToolUse hook."
+                    )
                 orient = (
                     f"[mesh connected as {agent_id}]"
                     f" Commands: mesh send <id> \"msg\", mesh peers, mesh inbox, mesh status."
-                    f"{peer_summary}"
+                    f"{peer_summary}{walkie_summary}"
                 )
                 os.write(master_fd, orient.encode())
                 time.sleep(0.05)
@@ -315,7 +329,10 @@ def main():
                     break
                 os.write(master_fd, data)
                 last_user_input = time.time()
-                last_key_was_enter = data.endswith(b"\r") or data.endswith(b"\n")
+                if data.endswith(b"\r") or data.endswith(b"\n"):
+                    has_uncommitted_input = False
+                else:
+                    has_uncommitted_input = True
 
             # CC → Terminal (transparent pass-through)
             if master_fd in rlist:
@@ -329,6 +346,7 @@ def main():
                     # We track this to gate message injection.
                     if b"\xe2\x9d\xaf" in data or b"\n> " in data or b"\r> " in data:
                         last_prompt_seen = time.time()
+                        has_uncommitted_input = False  # fresh prompt = clean line
                 except OSError:
                     break
 
@@ -336,11 +354,24 @@ def main():
             # Only inject when CC is at an idle prompt and user isn't typing.
             # This prevents: message landing mid-response, colliding with
             # user typing ([Pasted Text] marker), or hitting a survey prompt.
+            #
+            # KEY FINDINGS from probe testing (16 Mar 2026):
+            # - Single messages of ANY size (tested up to 8K) inject cleanly
+            # - Paste blocks are caused by BURST delivery (multiple messages
+            #   injected in rapid succession), not by message length
+            # - Fix: inject ONE message per poll cycle, wait for next cycle
             now = time.time()
             prompt_age = now - last_prompt_seen
             user_quiet = now - last_user_input
             prompt_is_idle = (prompt_age > PROMPT_IDLE_MIN)
-            user_is_quiet = (user_quiet > USER_QUIET_MIN) and last_key_was_enter
+            # Three conditions for safe injection:
+            # 1. CC has rendered a prompt (not mid-response)
+            # 2. No uncommitted text on the input line (user not composing)
+            # 3. Brief quiet period after last keystroke (debounce)
+            # The uncommitted-input flag is the key insight: it distinguishes
+            # "user paused to think mid-sentence" from "user is done."
+            # Reset on: Enter, new prompt (Ctrl+C, CC response complete).
+            user_is_quiet = (user_quiet > USER_QUIET_MIN) and not has_uncommitted_input
 
             if inbox_path and now - last_inbox_check > 0.5:
                 last_inbox_check = now
@@ -351,6 +382,9 @@ def main():
                             # Messages waiting but CC isn't idle — skip this
                             # poll cycle, we'll pick them up next time.
                             continue
+                        # Inject ONE message per poll cycle to prevent paste
+                        # block stacking. Remaining messages will be picked up
+                        # on the next cycle (0.5s later).
                         with open(inbox_path) as f:
                             f.seek(inbox_pos)
                             for line in f:
@@ -364,7 +398,8 @@ def main():
                                 os.write(master_fd, content.encode())
                                 time.sleep(0.05)
                                 os.write(master_fd, b"\r")
-                            inbox_pos = f.tell()
+                                inbox_pos = f.tell()
+                                break  # one message per cycle
                 except (FileNotFoundError, json.JSONDecodeError, OSError):
                     pass
 

@@ -1,0 +1,98 @@
+#!/bin/bash
+# walkie — local agent-to-agent messaging
+# Two CC sessions, same machine, fast backchannel.
+#
+# Env vars (set before launching claude):
+#   WALKIE_ID       — this agent's identity (e.g. "alpha")
+#   WALKIE_PARTNER  — partner agent's identity (e.g. "bravo")
+#
+# Usage:
+#   walkie send "the bridge drops messages above 4KB"
+#   walkie read          # show unread messages
+#   walkie log           # show full conversation
+#   walkie id            # print this agent's ID
+#   walkie clear         # reset read cursor
+
+DIR="/tmp/walkie"
+ID="${WALKIE_ID:?WALKIE_ID not set — are you running in walkie mode?}"
+PARTNER="${WALKIE_PARTNER:-}"
+OUTBOX="$DIR/$ID.jsonl"
+INBOX="$DIR/${PARTNER}.jsonl"
+CURSOR="$DIR/.cursor-$ID"
+
+mkdir -p "$DIR"
+
+case "${1:-help}" in
+  send)
+    shift
+    # Strip trailing "to <partner>" — routing is via env vars, not arguments
+    MSG=$(echo "$*" | sed -E 's/ +to +[a-zA-Z0-9_-]+$//')
+    [ -z "$MSG" ] && echo "Usage: walkie send \"message\"" && exit 1
+    TS=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+    printf '{"ts":"%s","from":"%s","message":"%s"}\n' "$TS" "$ID" "$(echo "$MSG" | sed 's/\\/\\\\/g; s/"/\\"/g')" >> "$OUTBOX"
+    echo "→ sent"
+    ;;
+  read)
+    [ -z "$PARTNER" ] && echo "WALKIE_PARTNER not set" && exit 1
+    [ -f "$INBOX" ] || { echo "No messages"; exit 0; }
+    LAST=$(cat "$CURSOR" 2>/dev/null || echo 0)
+    SIZE=$(stat -c%s "$INBOX" 2>/dev/null || stat -f%z "$INBOX" 2>/dev/null || echo 0)
+    [ "$SIZE" -le "$LAST" ] && { echo "No new messages"; exit 0; }
+    tail -c +$((LAST + 1)) "$INBOX" | while IFS= read -r line; do
+      [ -z "$line" ] && continue
+      FROM=$(echo "$line" | python3 -c "import json,sys; print(json.load(sys.stdin).get('from','?'))" 2>/dev/null)
+      MSG=$(echo "$line" | python3 -c "import json,sys; print(json.load(sys.stdin).get('message',''))" 2>/dev/null)
+      TS=$(echo "$line" | python3 -c "import json,sys; print(json.load(sys.stdin).get('ts',''))" 2>/dev/null)
+      echo "  [$FROM $TS] $MSG"
+    done
+    echo "$SIZE" > "$CURSOR"
+    ;;
+  log)
+    [ -z "$PARTNER" ] && echo "WALKIE_PARTNER not set" && exit 1
+    # Merge both files, sort by timestamp
+    MERGED=$(mktemp)
+    { [ -f "$OUTBOX" ] && cat "$OUTBOX"; [ -f "$INBOX" ] && cat "$INBOX"; } > "$MERGED"
+    python3 -c "
+import json, sys
+lines = []
+for line in open(sys.argv[1]):
+    line = line.strip()
+    if not line: continue
+    try: lines.append(json.loads(line))
+    except: pass
+lines.sort(key=lambda m: m.get('ts', ''))
+for m in lines:
+    print(f'  [{m.get(\"from\",\"?\")} {m.get(\"ts\",\"\")}] {m.get(\"message\",\"\")}')
+" "$MERGED"
+    rm -f "$MERGED"
+    ;;
+  id)
+    echo "$ID"
+    ;;
+  clear)
+    rm -f "$CURSOR"
+    echo "Cursor reset"
+    ;;
+  status)
+    echo "ID: $ID"
+    echo "Partner: ${PARTNER:-<not set>}"
+    echo "Dir: $DIR"
+    [ -f "$OUTBOX" ] && echo "Sent: $(wc -l < "$OUTBOX") messages" || echo "Sent: 0 messages"
+    [ -f "$INBOX" ] && echo "Received: $(wc -l < "$INBOX") messages" || echo "Received: 0 messages"
+    LAST=$(cat "$CURSOR" 2>/dev/null || echo 0)
+    SIZE=$(stat -c%s "$INBOX" 2>/dev/null || stat -f%z "$INBOX" 2>/dev/null || echo 0)
+    [ "$SIZE" -gt "$LAST" ] && echo "Unread: yes" || echo "Unread: no"
+    ;;
+  *)
+    echo "walkie — local agent-to-agent messaging"
+    echo "  ID: $ID  Partner: ${PARTNER:-<not set>}"
+    echo ""
+    echo "Commands:"
+    echo "  walkie send \"message\"   Send a message to partner"
+    echo "  walkie read              Show unread messages"
+    echo "  walkie log               Full conversation (both sides)"
+    echo "  walkie id                Print this agent's ID"
+    echo "  walkie status            Connection info"
+    echo "  walkie clear             Reset read cursor"
+    ;;
+esac
