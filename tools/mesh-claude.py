@@ -275,6 +275,7 @@ def main():
         stdin_fd = sys.stdin.fileno()
         stdout_fd = sys.stdout.fileno()
         last_inbox_check = 0
+        injected_messages = set()  # dedup: (sender, message_text)
         start_time = time.time()
         mesh_orientation_sent = not bool(inbox_path)  # skip if no mesh
         last_prompt_seen = 0.0    # when CC last showed an idle prompt
@@ -394,11 +395,15 @@ def main():
                                 msg = json.loads(line)
                                 sender = msg.get("from", "unknown")
                                 text = msg.get("message", "").replace("\n", " ")
+                                dedup_key = (sender, text)
+                                inbox_pos = f.tell()
+                                if dedup_key in injected_messages:
+                                    continue  # skip replay duplicate
+                                injected_messages.add(dedup_key)
                                 content = f"[mesh from {sender}] {text}"
                                 os.write(master_fd, content.encode())
                                 time.sleep(0.05)
                                 os.write(master_fd, b"\r")
-                                inbox_pos = f.tell()
                                 break  # one message per cycle
                 except (FileNotFoundError, json.JSONDecodeError, OSError):
                     pass

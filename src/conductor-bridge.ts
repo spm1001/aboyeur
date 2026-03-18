@@ -116,6 +116,16 @@ export class ConductorBridge extends EventEmitter<BridgeEvents> {
     if (!existsSync(outboxPath)) writeFileSync(outboxPath, "");
     this.outboxCursor = statSync(outboxPath).size;
 
+    // Restore dedup set from disk (survives bridge restarts)
+    const seenPath = join(this.bridgeDir, "seen_messages.json");
+    try {
+      if (existsSync(seenPath)) {
+        const arr = JSON.parse(readFileSync(seenPath, "utf-8"));
+        if (Array.isArray(arr)) arr.forEach((k: string) => this.seenMessages.add(k));
+        this.log(`Restored ${this.seenMessages.size} seen message keys`);
+      }
+    } catch { /* fresh start */ }
+
     this.writeStatus("disconnected");
   }
 
@@ -360,6 +370,11 @@ export class ConductorBridge extends EventEmitter<BridgeEvents> {
 
         const entry: InboxMessage = { ts: Date.now() / 1000, from: fromId, message };
         appendFileSync(join(this.bridgeDir, "inbox.jsonl"), JSON.stringify(entry) + "\n");
+        // Persist dedup set so it survives bridge restarts (prevents conductor replay floods)
+        writeFileSync(
+          join(this.bridgeDir, "seen_messages.json"),
+          JSON.stringify([...this.seenMessages]),
+        );
         this.log(`MSG from ${fromId}: ${message.slice(0, 120)}`);
         this.emit("message", fromId, message);
         break;
