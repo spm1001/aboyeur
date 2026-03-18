@@ -275,7 +275,9 @@ def main():
         stdin_fd = sys.stdin.fileno()
         stdout_fd = sys.stdout.fileno()
         last_inbox_check = 0
-        injected_messages = set()  # dedup: (sender, message_text)
+        # Dedup removed from injection layer — the bridge handles time-windowed
+        # dedup now, so inbox.jsonl won't contain conductor replay duplicates.
+        # Keeping a set here would block legitimate repeat messages.
         start_time = time.time()
         mesh_orientation_sent = not bool(inbox_path)  # skip if no mesh
         last_prompt_seen = 0.0    # when CC last showed an idle prompt
@@ -395,11 +397,7 @@ def main():
                                 msg = json.loads(line)
                                 sender = msg.get("from", "unknown")
                                 text = msg.get("message", "").replace("\n", " ")
-                                dedup_key = (sender, text)
                                 inbox_pos = f.tell()
-                                if dedup_key in injected_messages:
-                                    continue  # skip replay duplicate
-                                injected_messages.add(dedup_key)
                                 content = f"[mesh from {sender}] {text}"
                                 os.write(master_fd, content.encode())
                                 time.sleep(0.05)
@@ -411,6 +409,16 @@ def main():
     finally:
         if old_attrs is not None:
             termios.tcsetattr(sys.stdin, termios.TCSADRAIN, old_attrs)
+        # Restore terminal state that stty alone can't fix:
+        # - Exit alternate screen buffer (\e[?1049l)
+        # - Show cursor (\e[?25h)
+        # - Reset character attributes (\e[0m)
+        # Without this, if claude dies without sending its cleanup escapes,
+        # the terminal is stuck with no echo and no visible cursor.
+        try:
+            os.write(sys.stdout.fileno(), b"\033[?1049l\033[?25h\033[0m")
+        except OSError:
+            pass
         os.close(master_fd)
 
         # Clean up bridge sidecar (kill process group, not just top PID —
@@ -435,7 +443,11 @@ def main():
         except OSError:
             pass
 
-        sys.exit(proc.wait())
+        # proc.wait() returns negative values for signal deaths (-SIGTERM = -15).
+        # sys.exit() with negative ints is undefined behaviour in some contexts.
+        # Map to 128+signal (POSIX convention) or 0 for clean exit.
+        rc = proc.wait()
+        sys.exit(max(rc, 0) if rc >= 0 else 128 + abs(rc))
 
 
 if __name__ == "__main__":

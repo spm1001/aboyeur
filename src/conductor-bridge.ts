@@ -75,6 +75,8 @@ const PING_INTERVAL_MS = 25_000;
 const OUTBOX_POLL_MS = 500;
 const RECONNECT_DELAY_MS = 1_000;
 const MAX_RECONNECT_DELAY_MS = 30_000;
+/** Messages with identical sender+content within this window are deduped (handles conductor replays). */
+const DEDUP_WINDOW_S = 60;
 
 // --- ConductorBridge ---
 
@@ -89,7 +91,8 @@ export class ConductorBridge extends EventEmitter<BridgeEvents> {
   private ws: WebSocket | null = null;
   private closed = false;
   private peers: Record<string, PeerInfo> = {};
-  private seenMessages = new Set<string>();
+  /** Dedup map: message key → epoch (seconds). Entries older than DEDUP_WINDOW_S are expired. */
+  private seenMessages = new Map<string, number>();
   private outboxCursor = 0;
   private pingTimer: ReturnType<typeof setInterval> | null = null;
   private outboxTimer: ReturnType<typeof setInterval> | null = null;
@@ -116,13 +119,26 @@ export class ConductorBridge extends EventEmitter<BridgeEvents> {
     if (!existsSync(outboxPath)) writeFileSync(outboxPath, "");
     this.outboxCursor = statSync(outboxPath).size;
 
-    // Restore dedup set from disk (survives bridge restarts)
+    // Restore dedup map from disk (survives bridge restarts).
+    // Format: [[key, epoch], ...]. Entries older than DEDUP_WINDOW_S are discarded.
     const seenPath = join(this.bridgeDir, "seen_messages.json");
     try {
       if (existsSync(seenPath)) {
-        const arr = JSON.parse(readFileSync(seenPath, "utf-8"));
-        if (Array.isArray(arr)) arr.forEach((k: string) => this.seenMessages.add(k));
-        this.log(`Restored ${this.seenMessages.size} seen message keys`);
+        const raw = JSON.parse(readFileSync(seenPath, "utf-8"));
+        const now = Date.now() / 1000;
+        if (Array.isArray(raw)) {
+          for (const entry of raw) {
+            if (Array.isArray(entry) && entry.length === 2) {
+              // New format: [key, epoch]
+              const [k, ts] = entry as [string, number];
+              if (now - ts < DEDUP_WINDOW_S) this.seenMessages.set(k, ts);
+            } else if (typeof entry === "string") {
+              // Old format migration: treat as just-seen
+              this.seenMessages.set(entry, now);
+            }
+          }
+        }
+        this.log(`Restored ${this.seenMessages.size} seen message keys (expired old entries)`);
       }
     } catch { /* fresh start */ }
 
@@ -365,15 +381,29 @@ export class ConductorBridge extends EventEmitter<BridgeEvents> {
         const fromId: string = data.from ?? "?";
         const message: string = data.message ?? "";
         const msgKey = `${fromId}:${message}`;
-        if (this.seenMessages.has(msgKey)) break;
-        this.seenMessages.add(msgKey);
+        const now = Date.now() / 1000;
 
-        const entry: InboxMessage = { ts: Date.now() / 1000, from: fromId, message };
+        // Time-windowed dedup: reject only if the same message arrived within DEDUP_WINDOW_S.
+        // This catches conductor replays on reconnect (which re-deliver recent messages)
+        // while allowing genuinely repeated messages after the window expires.
+        const lastSeen = this.seenMessages.get(msgKey);
+        if (lastSeen !== undefined && now - lastSeen < DEDUP_WINDOW_S) {
+          this.log(`DEDUP skip from ${fromId} (seen ${Math.round(now - lastSeen)}s ago)`);
+          break;
+        }
+        this.seenMessages.set(msgKey, now);
+
+        // Expire old entries to prevent unbounded growth
+        for (const [k, ts] of this.seenMessages) {
+          if (now - ts >= DEDUP_WINDOW_S) this.seenMessages.delete(k);
+        }
+
+        const entry: InboxMessage = { ts: now, from: fromId, message };
         appendFileSync(join(this.bridgeDir, "inbox.jsonl"), JSON.stringify(entry) + "\n");
-        // Persist dedup set so it survives bridge restarts (prevents conductor replay floods)
+        // Persist dedup map so it survives bridge restarts
         writeFileSync(
           join(this.bridgeDir, "seen_messages.json"),
-          JSON.stringify([...this.seenMessages]),
+          JSON.stringify([...this.seenMessages.entries()]),
         );
         this.log(`MSG from ${fromId}: ${message.slice(0, 120)}`);
         this.emit("message", fromId, message);
