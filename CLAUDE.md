@@ -96,7 +96,8 @@ PM reads bon state again...
 | `src/trigger-cron.ts` | Interval-based cron triggers (HEARTBEAT) | Medium |
 | `src/daemon.ts` | Wires trigger loop → context queue → spawn (with mock injection for tests) | High — integration point |
 | `src/main.ts` | Daemon entry point — wires router, cron, shutdown handlers | High — the executable |
-| `src/conductor-bridge.ts` | WebSocket bridge to Anthropic's conductor mesh | High — mesh infrastructure |
+| `src/conductor-bridge.ts` | WebSocket bridge to Anthropic's conductor mesh — sidecar approach, being superseded by conductor-channel.ts (aby-nenabo) | High — mesh infrastructure |
+| `src/conductor-channel.ts` | MCP channel server wrapping ConductorBridge — replaces PTY sidecar (aby-nenabo, not yet built) | High — new mesh integration |
 | `src/index.ts` | Barrel export for daemon modules | Low |
 | `docs/architecture-decisions.md` | Design decisions and rejected alternatives | High — prevents re-derivation |
 | `shared/prompts/aboyeur-open.md` | Aboyeur instructions (routing, session naming) | High — the brain |
@@ -104,14 +105,39 @@ PM reads bon state again...
 | `shared/prompts/reflector-open.md` | Reflector instructions (code/work review) | High — sycophancy risk if weakened |
 | `shared/prompts/planning-reflector.md` | Planning reflector (architecture review) | High — catches assumption errors |
 | `shared/prompts/worker-open.md` | Worker instructions | Medium |
-| `shared/prompts/mesh-awareness.md` | Mesh commands and conventions for CC sessions | Medium |
+| `shared/prompts/mesh-awareness.md` | Mesh commands and conventions — being replaced by conductor-channel.ts instructions field (aby-nenabo) | Medium |
 | `service/aboyeur-daemon.service` | Systemd user unit for hezza | Medium |
 | `HEARTBEAT.md` | Periodic health check checklist | Low |
+
+### Mesh Integration (aby-nenabo — in progress)
+
+CC sessions join the Anthropic conductor mesh (`bridge.claudeusercontent.com`) via a Channels MCP server, not the PTY sidecar. The Channels API (CC v2.1.80+, research preview) lets an MCP server push events directly into a CC session as `<channel>` tags — no PTY injection, no file polling.
+
+**How it works:** `conductor-channel.ts` wraps `ConductorBridge` as an MCP server. CC is started with `--dangerously-load-development-channels server:conductor-channel`. Incoming mesh messages arrive as `<channel source="conductor-bridge" from="cc-peer">` tags. Claude sends via `mesh_send` MCP tool.
+
+**MESH_ENABLED gate:** Do NOT add the channels flag to `CC_BASE_FLAGS` (that poisons all Guéridon sessions). Gate on env var in `spawnCC()`: if `MESH_ENABLED` is set, append `--dangerously-load-development-channels server:conductor-channel` to args and set `MESH_AGENT_ID` in env.
+
+**agentId scheme** (multiple Claudes per folder — folder alone is not unique enough):
+
+| Session type | Mesh agentId |
+|---|---|
+| Aboyeur | `cc-aboyeur` |
+| PM | `cc-pm-{outcome-id}` e.g. `cc-pm-aby-kikebu` |
+| Worker | `cc-worker-{action-id}-{seq}` e.g. `cc-worker-aby-sanimu-01` |
+| Reflector | `cc-reflector-{action-id}-{seq}` |
+| Guéridon interactive | `cc-{folder}` |
+
+Stable IDs mean session restart re-registers the same agentId rather than appearing as a new stranger. `MESH_AGENT_ID` env var is how the spawner passes the computed ID to CC and then to the channel server.
+
+**Known bug in conductor-bridge.ts:** `handleMessage()` handles `conductor_agent_offline` (never observed in practice) but not `conductor_agent_expired` (what the mesh actually sends). Peers accumulate as stale. Fix as part of aby-nenabo.
+
+**Intel repo:** `~/Repos/claude-in-office` has the full conductor protocol documentation, Office bundle analysis, and timing measurements. Read `docs/CONDUCTOR-PROTOCOL.md` there before working on mesh code — it is the canonical protocol reference.
 
 ### Reference Implementations (crib from these)
 
 | Pattern | Where to look |
 |---------|---------------|
+| Channels MCP server | `https://code.claude.com/docs/en/channels-reference` (two-way example) + `src/conductor-bridge.ts` (WebSocket logic to wrap) |
 | Spawn + env-var stripping | `~/Repos/gueridon/server/bridge.ts:326-345` (THE primary reference) |
 | Session resume logic | `~/Repos/gueridon/server/bridge-logic.ts` (buildCCArgs, resolveSessionForFolder) |
 | Gueridon bridge API | `~/Repos/gueridon/server/bridge.ts` (session lifecycle: spawn, list, kill, events) |
@@ -125,6 +151,8 @@ PM reads bon state again...
 - **TypeScript** for all new code (daemon, conductor, spawnAgent)
 - **Gueridon's spawn pattern** for daemon→conductor (`claude` CLI + stream-json)
 - **Gueridon bridge API** for conductor→workers (at one remove)
+- **Channels MCP** for mesh connectivity (`conductor-channel.ts`, not sidecar)
+- **MESH_ENABLED env var** to gate mesh on/off per spawn — never default in CC_BASE_FLAGS
 - **Max subscription** auth for all agents
 - **Bon `--json`** for structured work state (not markdown parsing)
 - Prompts: direct, concrete instructions over abstract principles
@@ -145,4 +173,4 @@ End-to-end test harness (aby-wesaci, complete) with mock spawn injection. Tests 
 
 ## Status
 
-Pre-alpha. Daemon core plumbing built and tested: `spawnAgent()` → `TriggerDB` → `TriggerLoop` → `ContextQueue` → `daemon.ts` integration. Next: Gmail trigger (aby-sanimu), HEARTBEAT cron (aby-vemapa), and the conductor rewrite to use Gueridon bridge (aby-pinida). Planning reflector prompt is written and validated.
+Pre-alpha. Daemon core plumbing built and tested: `spawnAgent()` → `TriggerDB` → `TriggerLoop` → `ContextQueue` → `daemon.ts` integration. Mesh connectivity planned via Channels MCP (aby-nenabo) replacing the PTY sidecar approach. Next active work: aby-nenabo (conductor-channel.ts), cio-jurefa (transport capture in ~/Repos/claude-in-office), aby-sanimu (Gmail trigger, blocked on aby-hemimi).
