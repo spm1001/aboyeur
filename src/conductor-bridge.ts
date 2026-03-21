@@ -177,6 +177,13 @@ export class ConductorBridge extends EventEmitter<BridgeEvents> {
     this.closed = true;
     this.stopTimers();
     if (this.ws) {
+      // Send deregister before closing — triggers fast ~12s conductor_agent_reset
+      // on peers instead of 60-120s conductor_agent_expired (confirmed in bundle
+      // B516XsRS: wdt.close() sends this, multiplexer.close() does not).
+      if (this.ws.readyState === WebSocket.OPEN) {
+        this.ws.send(JSON.stringify({ type: "deregister", _agent_id: this.agentId }));
+        this.log("Deregister sent");
+      }
       this.ws.close();
       this.ws = null;
     }
