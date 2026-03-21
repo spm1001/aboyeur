@@ -146,9 +146,15 @@ The daemon core plumbing is complete and tested:
 
 **events.jsonl is the primary debugging tool** for all mesh work. Adding it took 5 minutes; it immediately revealed wire-level details (Office Claudes send `fileName` and `documentUrl` in status broadcasts, `appName` maps to `schema.label`). Future aby-dawugu work should start by examining traces rather than theorising.
 
-**PTY injection is the fragile layer.** Long messages fragment above PIPE_BUF. The wrapper must gate injection on prompt-idle state (Enter keypress + 10s quiet). Autonomous (unattended) sessions need a separate injection mode with no human-presence assumptions. This is what aby-denewo addresses.
+**PTY injection problems are about burst timing, not message size.** Single messages of any size (tested to 8K) inject cleanly. Paste blocks happen when multiple queued messages fire in rapid succession (~50ms gaps). The fix: one message per poll cycle. More fundamentally, PTY injection isn't the only delivery path — PostToolUse hooks deliver messages as `additionalContext` with no terminal involvement. This means Guéridon's `-p` mode sessions could receive mesh messages via stdin envelope (which Guéridon already uses for prompts), bypassing PTY entirely. The mesh transport and the message delivery are separable concerns.
+
+**Hook output requires `hookEventName`.** CC silently drops `additionalContext` from hook output JSON if this field is missing. The field must match the triggering event — read `hook_event_name` from CC's stdin JSON and echo it back.
 
 **"Agent not found" is a normal operational error** — it crashed both Mac and hezza bridges independently before we added the error listener. The bridge's error handling was the most impactful fix of the 14-15 Mar mesh sessions.
+
+**Deregister before close for fast disconnect.** Sending `{ "type": "deregister", "_agent_id": "<id>" }` before `ws.close()` triggers the fast path: peers see `conductor_agent_reset` in ~12s. Without it, peers get `conductor_agent_expired` after 60-120s. Office add-ins do this behind the scenes via `wdt.close()` — the Office Claudes themselves have no visibility of the mechanism (confirmed by direct interview with PowerPoint and Excel agents). `conductor_agent_offline`, though handled in the bridge code, is never actually sent by the mesh.
+
+**The daemon doesn't need Gmail code.** Original design (6 Mar) said "daemon polls Gmail directly" because mise was stdio-only and required a Claude session. With mise moving to served mode (HTTP), the daemon just calls mise's endpoint. One jeton token, one OAuth client, zero Gmail code in the daemon. The one-shot Claude handling the email uses the same served mise instance. This simplification should be reflected when aby-becibi is written.
 
 ## Landmines
 
@@ -156,5 +162,6 @@ The daemon core plumbing is complete and tested:
 - The conductor mesh requires `_agent_id` on all client messages EXCEPT pings. Pings must NOT include `_agent_id` from Node.js. Broadcasts MUST include it. Getting this wrong causes `"Multiplexed messages require _agent_id"` errors.
 - Bridge reconnections replay all buffered events — the TS bridge deduplicates via `msgKey = fromId + ":" + message` set.
 - `tools/mesh` CLI is generated at runtime by mesh-claude.py and gitignored — don't look for it in the repo.
+- The bridge server has two endpoints: `/v2/conductor/{uuid}` for the mesh and `/office/{uuid}` for Cowork pairing. Connecting to the wrong one puts you on the pairing protocol. The aboyeur bridge uses the correct one.
 - `npx tsx` spawns a 4-process chain (npx → sh → node tsx → node). The bridge must be started with `preexec_fn=os.setsid` and killed with `os.killpg()` or orphans will persist on the mesh and cause reconnection storms ("Superseded by new connection" every ~1s). Ad-hoc bridge spawning (tests, manual experiments) must follow the same pattern — any bare `kill $PID` only kills the top process and litters the mesh with ghosts.
 - The raw-bundle/ directory in claude-in-office is gitignored — bundle files, API requests, conductor traces are LOCAL ONLY on Hezza.

@@ -34,6 +34,10 @@ export interface SpawnAgentOptions {
   permissionMode?: string;
   /** MCP config path (defaults to ~/.claude/settings.json). */
   mcpConfigPath?: string;
+  /** Mesh agent ID — if set, enables conductor mesh via Channels MCP. */
+  meshAgentId?: string;
+  /** Mesh role — aboyeur | pm | worker | user (default: user). */
+  meshRole?: string;
   /** Abort signal for cancellation. */
   signal?: AbortSignal;
   /**
@@ -127,6 +131,11 @@ function buildArgs(opts: SpawnAgentOptions, sessionId: string): string[] {
     args.push("--max-turns", String(opts.maxTurns));
   }
 
+  // Mesh: load conductor-channel as a CC Channel if agent ID is set
+  if (opts.meshAgentId) {
+    args.push("--dangerously-load-development-channels", "server:conductor-channel");
+  }
+
   // Session resume vs fresh
   if (opts.resume && opts.sessionId) {
     args.push("--resume", sessionId);
@@ -139,14 +148,19 @@ function buildArgs(opts: SpawnAgentOptions, sessionId: string): string[] {
 
 // --- Build env ---
 
-function buildEnv(): NodeJS.ProcessEnv {
+function buildEnv(opts: SpawnAgentOptions): NodeJS.ProcessEnv {
   const env: Record<string, string | undefined> = {};
   for (const [k, v] of Object.entries(process.env)) {
     if (!STRIP_ENV_VARS.includes(k)) {
       env[k] = v;
     }
   }
-  return { ...env, ...HEADLESS_ENV };
+  const meshEnv: Record<string, string> = {};
+  if (opts.meshAgentId) {
+    meshEnv.MESH_AGENT_ID = opts.meshAgentId;
+    meshEnv.MESH_ROLE = opts.meshRole ?? "user";
+  }
+  return { ...env, ...HEADLESS_ENV, ...meshEnv };
 }
 
 // --- Event extraction helpers ---
@@ -209,7 +223,7 @@ function extractStatus(events: CCEvent[]): "success" | "error" | "aborted" {
 export function spawnAgent(opts: SpawnAgentOptions): Promise<SpawnAgentResult> {
   const sessionId = opts.sessionId ?? crypto.randomUUID();
   const args = buildArgs(opts, sessionId);
-  const env = buildEnv();
+  const env = buildEnv(opts);
 
   return new Promise((resolve, reject) => {
     let proc: ChildProcess;

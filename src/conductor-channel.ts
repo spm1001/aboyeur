@@ -7,18 +7,16 @@
  *
  * It wraps ConductorBridge (WebSocket logic) and speaks the MCP Channels protocol:
  *   - Incoming mesh messages → mcp.notification() → <channel> tag in CC context
- *   - Outbound: CC calls mesh_send / mesh_peers MCP tools
+ *   - Outbound: CC calls send_message / mesh_peers MCP tools
  *
  * Required env vars:
  *   MESH_AGENT_ID  — stable mesh identity, e.g. cc-aboyeur, cc-pm-aby-kikebu
  *   MESH_ROLE      — aboyeur | pm | worker | user (affects interrupt semantics)
  *
- * Register in ~/.claude/settings.json:
- *   { "mcpServers": { "conductor-bridge": { "command": "npx", "args": ["tsx", "/home/modha/Repos/aboyeur/src/conductor-channel.ts"] } } }
+ * Status files written to /tmp/conductor-bridge/{MESH_AGENT_ID}/ for statusline.sh.
  *
- * NOT YET IMPLEMENTED — aby-nenabo. This is a skeleton.
- * Reference: https://code.claude.com/docs/en/channels-reference
- * Crib from: src/conductor-bridge.ts (ConductorBridge class)
+ * Register in .mcp.json: { "mcpServers": { "conductor-channel": { "command": "node", "args": ["dist/conductor-channel.js"] } } }
+ * Then: claude --dangerously-load-development-channels server:conductor-channel
  */
 
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
@@ -30,8 +28,9 @@ const agentId = process.env.MESH_AGENT_ID;
 const role = process.env.MESH_ROLE ?? "user";
 
 if (!agentId) {
-  console.error("[conductor-channel] MESH_AGENT_ID env var is required");
-  process.exit(1);
+  // No MESH_AGENT_ID → not a mesh session (e.g. subagent inheriting MCP config).
+  // Exit silently — CC handles a failed channel server gracefully.
+  process.exit(0);
 }
 
 // --- Instructions injected into CC's system prompt ---
@@ -39,22 +38,22 @@ if (!agentId) {
 const INSTRUCTIONS_BY_ROLE: Record<string, string> = {
   worker:
     "You are connected to the Anthropic conductor mesh. Mesh messages arrive as " +
-    "<channel source=\"conductor-bridge\" from=\"cc-peer\"> tags. You are a worker mid-task — " +
-    "finish your current task first, then reply using the mesh_send tool. " +
+    '<channel source="conductor-channel"> tags with a "from" field. You are a worker mid-task — ' +
+    "finish your current task first, then reply using the send_message tool. " +
     "Do not interrupt your work for mesh messages unless the message is from your PM and says STOP.",
   aboyeur:
     "You are connected to the Anthropic conductor mesh. Mesh messages arrive as " +
-    "<channel source=\"conductor-bridge\" from=\"cc-peer\"> tags. Respond promptly. " +
-    "Use mesh_send to reply, passing the 'from' attribute as the 'to' value. " +
+    '<channel source="conductor-channel"> tags with a "from" field. Respond promptly. ' +
+    "Use send_message to reply, passing the 'from' value as the 'to' argument. " +
     "Use mesh_peers to see who is online before sending to a new peer.",
   pm:
     "You are connected to the Anthropic conductor mesh. Mesh messages arrive as " +
-    "<channel source=\"conductor-bridge\" from=\"cc-peer\"> tags. Respond promptly to " +
-    "worker verdicts and aboyeur messages. Use mesh_send to reply or route.",
+    '<channel source="conductor-channel"> tags with a "from" field. Respond promptly to ' +
+    "worker verdicts and aboyeur messages. Use send_message to reply or route.",
   user:
     "You are connected to the Anthropic conductor mesh. Mesh messages arrive as " +
-    "<channel source=\"conductor-bridge\" from=\"cc-peer\"> tags. " +
-    "Use mesh_send to reply, mesh_peers to see who is online.",
+    '<channel source="conductor-channel"> tags with a "from" field. ' +
+    "Use send_message to reply, mesh_peers to see who is online.",
 };
 
 const instructions = INSTRUCTIONS_BY_ROLE[role] ?? INSTRUCTIONS_BY_ROLE.user;
@@ -62,27 +61,27 @@ const instructions = INSTRUCTIONS_BY_ROLE[role] ?? INSTRUCTIONS_BY_ROLE.user;
 // --- MCP server setup ---
 
 const mcp = new Server(
-  { name: "conductor-bridge", version: "0.1.0" },
+  { name: "conductor-channel", version: "0.1.0" },
   {
     capabilities: {
-      experimental: { "claude/channel": {} }, // registers as a CC Channel
+      experimental: { "claude/channel": {} },
       tools: {},
     },
     instructions,
   },
 );
 
-// --- Tool: mesh_send ---
+// --- Tools: send_message + mesh_peers ---
 
 mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
   tools: [
     {
-      name: "mesh_send",
+      name: "send_message",
       description: "Send a message to a peer on the conductor mesh",
       inputSchema: {
-        type: "object",
+        type: "object" as const,
         properties: {
-          to: { type: "string", description: "Recipient agentId, e.g. cc-aboyeur" },
+          to: { type: "string", description: "Recipient agentId (from mesh_peers or channel tag 'from' field)" },
           message: { type: "string", description: "The message to send" },
         },
         required: ["to", "message"],
@@ -91,24 +90,26 @@ mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
     {
       name: "mesh_peers",
       description: "List currently connected peers on the conductor mesh",
-      inputSchema: { type: "object", properties: {} },
+      inputSchema: { type: "object" as const, properties: {} },
     },
   ],
 }));
 
 mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
-  if (req.params.name === "mesh_send") {
+  if (req.params.name === "send_message") {
     const { to, message } = req.params.arguments as { to: string; message: string };
     bridge.send(to, message);
     return { content: [{ type: "text", text: `sent to ${to}` }] };
   }
   if (req.params.name === "mesh_peers") {
     const peers = bridge.getPeers();
-    const lines = Object.entries(peers).map(([id, info]) => `${id} — ${info.label}`);
+    const lines = Object.entries(peers).map(
+      ([id, info]) => `${id} — ${info.label} (${info.app})`,
+    );
     const text = lines.length ? lines.join("\n") : "(no peers connected)";
     return { content: [{ type: "text", text }] };
   }
-  throw new Error(`unknown tool: ${req.params.name}`);
+  return { content: [{ type: "text", text: `unknown tool: ${req.params.name}` }], isError: true };
 });
 
 // --- ConductorBridge wiring ---
@@ -120,6 +121,12 @@ const bridge = new ConductorBridge({
   fileName: agentId,
 });
 
+// Incoming mesh message → push as channel notification to CC.
+// The bridge already deduplicates replays — we only see genuinely new messages.
+//
+// NOTE: The notification shape (method + params) is from the CC Channels reference.
+// If CC doesn't surface these as <channel> tags, this is the first place to check.
+// The Channels API is a research preview (CC v2.1.80+) — the shape may change.
 bridge.on("message", async (from, message) => {
   await mcp.notification({
     method: "notifications/claude/channel",
@@ -130,8 +137,49 @@ bridge.on("message", async (from, message) => {
   });
 });
 
+// Peer joins/leaves → push as channel notification so CC sees mesh changes.
+bridge.on("peer_online", async (peerId, info) => {
+  await mcp.notification({
+    method: "notifications/claude/channel",
+    params: {
+      content: `Peer online: ${peerId} (${info.label}, ${info.app})`,
+      meta: { event: "peer_online", peerId },
+    },
+  });
+});
+
+bridge.on("peer_offline", async (peerId) => {
+  await mcp.notification({
+    method: "notifications/claude/channel",
+    params: {
+      content: `Peer offline: ${peerId}`,
+      meta: { event: "peer_offline", peerId },
+    },
+  });
+});
+
+// On successful connection: push a peer summary (replay filtering).
+// The bridge processes replayed events internally (building peers map) but
+// does NOT emit "message" events for replayed conductor_messages (dedup catches them).
+// So we just push a one-time summary after replay completes.
+bridge.on("connected", async () => {
+  const peers = bridge.getPeers();
+  const count = Object.keys(peers).length;
+  if (count > 0) {
+    const lines = Object.entries(peers).map(
+      ([id, info]) => `${id} — ${info.label}`,
+    );
+    await mcp.notification({
+      method: "notifications/claude/channel",
+      params: {
+        content: `Mesh connected. ${count} peer(s) online:\n${lines.join("\n")}`,
+        meta: { event: "connected" },
+      },
+    });
+  }
+});
+
 bridge.on("error", (err) => {
-  // Log but don't crash — mesh errors are recoverable
   console.error(`[conductor-channel] bridge error: ${err}`);
 });
 
@@ -140,8 +188,7 @@ bridge.on("error", (err) => {
 await mcp.connect(new StdioServerTransport());
 await bridge.connect();
 
-// Clean shutdown: when CC exits it closes stdin. Send WebSocket close frame
-// before dying so peers get conductor_agent_expired promptly (not after TCP timeout).
+// Clean shutdown: when CC exits it closes stdin → deregister + close WebSocket.
 process.stdin.on("end", () => {
   bridge.close();
   process.exit(0);

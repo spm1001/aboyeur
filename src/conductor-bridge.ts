@@ -375,11 +375,13 @@ export class ConductorBridge extends EventEmitter<BridgeEvents> {
         break;
       }
 
-      case "conductor_agent_offline": {
+      case "conductor_agent_offline":
+      case "conductor_agent_expired":
+      case "conductor_agent_reset": {
         const peerId: string = data.agentId ?? "";
         delete this.peers[peerId];
         this.writePeers();
-        this.log(`Peer offline: ${peerId}`);
+        this.log(`Peer ${msgType.replace("conductor_agent_", "")}: ${peerId}`);
         this.emit("peer_offline", peerId);
         break;
       }
