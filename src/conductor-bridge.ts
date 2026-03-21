@@ -302,12 +302,17 @@ export class ConductorBridge extends EventEmitter<BridgeEvents> {
         // 1008 is RFC 6455 policy violation. aby-dawugu should verify these
         // when testing long-duration token refresh cycles.
         const isAuthClose = code === 4001 || code === 4003 || code === 1008;
-        const delay = isAuthClose ? RECONNECT_DELAY_MS * 5 : RECONNECT_DELAY_MS;
+        // Use backoff on ALL reconnects, not just auth failures.
+        // Without this, a server that accepts then drops produces 1s rapid-fire cycles.
+        const delay = isAuthClose
+          ? Math.min(this.reconnectDelay * 5, MAX_RECONNECT_DELAY_MS)
+          : Math.min(this.reconnectDelay, MAX_RECONNECT_DELAY_MS);
+        this.reconnectDelay = Math.min(this.reconnectDelay * 2, MAX_RECONNECT_DELAY_MS);
         if (isAuthClose) {
           this.log(`Auth-related close (${code}). Waiting ${delay}ms for token refresh...`);
         }
         this.writeStatus("reconnecting");
-        this.log("Reconnecting with fresh credentials...");
+        this.log(`Reconnecting in ${delay}ms with fresh credentials...`);
         setTimeout(() => this.resolveAndConnect(), delay);
       }
     });
@@ -349,11 +354,17 @@ export class ConductorBridge extends EventEmitter<BridgeEvents> {
             color: payload.display?.color ?? "",
           };
           this.writePeers();
-          if (!replay) this.log(`Peer joined: ${peerId}`);
+          if (!replay) {
+            this.log(`Peer joined: ${peerId}`);
+            this.emit("peer_online", peerId, this.peers[peerId]);
+          }
         } else if (evt === "disconnect") {
           delete this.peers[peerId];
           this.writePeers();
-          if (!replay) this.log(`Peer left: ${peerId}`);
+          if (!replay) {
+            this.log(`Peer left: ${peerId}`);
+            this.emit("peer_offline", peerId);
+          }
         } else if (evt === "status" && peerId in this.peers) {
           (this.peers[peerId] as any).file = payload.fileName ?? "";
           this.writePeers();

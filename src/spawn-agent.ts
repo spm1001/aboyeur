@@ -91,13 +91,15 @@ const MCP_CONFIG_DEFAULT = join(homedir(), ".claude", "settings.json");
 /** Env vars to strip — prevents "Claude spawning Claude" block. */
 const STRIP_ENV_VARS = ["CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT"];
 
-/** Env vars to set for headless operation. */
+/** Env vars to set for headless operation.
+ *  NOTE: CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC intentionally omitted —
+ *  it blocks feature flag fetches which gates Channels API (channel push).
+ *  Without feature flags, mesh-enabled sessions can send but not receive. */
 const HEADLESS_ENV: Record<string, string> = {
   CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR: "1",
   CLAUDE_CODE_DISABLE_BACKGROUND_TASKS: "1",
   CLAUDE_CODE_DISABLE_TERMINAL_TITLE: "1",
   CLAUDE_CODE_DISABLE_FEEDBACK_SURVEY: "1",
-  CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1",
   CLAUDE_CODE_HIDE_ACCOUNT_INFO: "1",
 };
 
