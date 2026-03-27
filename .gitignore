@@ -1,6 +1,9 @@
 # Conductor runtime state
 .aboyeur/
 
+# Beat cycle state
+.beat/
+
 # Node / TypeScript
 node_modules/
 dist/

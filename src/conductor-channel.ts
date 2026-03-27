@@ -9,9 +9,11 @@
  *   - Incoming mesh messages → mcp.notification() → <channel> tag in CC context
  *   - Outbound: CC calls send_message / mesh_peers MCP tools
  *
- * Required env vars:
+ * Env vars:
  *   MESH_AGENT_ID  — stable mesh identity, e.g. cc-aboyeur, cc-pm-aby-kikebu
+ *                    Auto-generated from folder name (cc-{folder}) if not set.
  *   MESH_ROLE      — aboyeur | pm | worker | user (affects interrupt semantics)
+ *   MESH_DISABLED  — set to "1" to suppress mesh (for subagents inheriting MCP config)
  *
  * Status files written to /tmp/conductor-bridge/{MESH_AGENT_ID}/ for statusline.sh.
  *
@@ -19,19 +21,30 @@
  * Then: claude --dangerously-load-development-channels server:conductor-channel
  */
 
+import { basename } from "node:path";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { ListToolsRequestSchema, CallToolRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import { ConductorBridge } from "./conductor-bridge.js";
 
-const agentId = process.env.MESH_AGENT_ID;
-const role = process.env.MESH_ROLE ?? "user";
+// Diagnostic: dump env + MCP init info
+import { writeFileSync, appendFileSync } from "node:fs";
+try {
+  const claudeVars = Object.entries(process.env)
+    .filter(([k]) => k.startsWith("CLAUDE") || k.startsWith("MCP") || k.startsWith("MESH") || k === "CLAUDECODE")
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([k, v]) => `${k}=${v}`)
+    .join("\n");
+  writeFileSync("/tmp/conductor-channel-env.txt", claudeVars + "\n");
+} catch { /* ignore */ }
 
-if (!agentId) {
-  // No MESH_AGENT_ID → not a mesh session (e.g. subagent inheriting MCP config).
-  // Exit silently — CC handles a failed channel server gracefully.
+if (process.env.MESH_DISABLED === "1") {
+  // Explicit opt-out (e.g. subagent inheriting MCP config).
   process.exit(0);
 }
+
+const agentId = process.env.MESH_AGENT_ID || `cc-${basename(process.cwd())}`;
+const role = process.env.MESH_ROLE ?? "user";
 
 // --- Instructions injected into CC's system prompt ---
 // Role-aware: workers queue and defer, aboyeur/pm respond promptly.
@@ -148,12 +161,12 @@ bridge.on("peer_online", async (peerId, info) => {
   });
 });
 
-bridge.on("peer_offline", async (peerId) => {
+bridge.on("peer_offline", async (peerId, reason) => {
   await mcp.notification({
     method: "notifications/claude/channel",
     params: {
-      content: `Peer offline: ${peerId}`,
-      meta: { event: "peer_offline", peerId },
+      content: `Peer offline: ${peerId} (${reason})`,
+      meta: { event: "peer_offline", peerId, reason },
     },
   });
 });
@@ -186,6 +199,16 @@ bridge.on("error", (err) => {
 // --- Lifecycle ---
 
 await mcp.connect(new StdioServerTransport());
+
+// Diagnostic: capture MCP client info (looking for session ID)
+try {
+  const clientVersion = mcp.getClientVersion();
+  const clientCaps = mcp.getClientCapabilities();
+  appendFileSync("/tmp/conductor-channel-env.txt",
+    `\n--- MCP clientInfo ---\n${JSON.stringify(clientVersion, null, 2)}\n` +
+    `\n--- MCP clientCapabilities ---\n${JSON.stringify(clientCaps, null, 2)}\n`);
+} catch { /* ignore */ }
+
 await bridge.connect();
 
 // Clean shutdown: when CC exits it closes stdin → deregister + close WebSocket.

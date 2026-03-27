@@ -56,9 +56,11 @@ describe("deregister timing", () => {
           reject(new Error("Timeout: observer never saw peer go offline after 30s"));
         }, 30_000);
 
-        observer.on("peer_offline", (peerId) => {
+        observer.on("peer_offline", (peerId, reason) => {
           if (peerId.startsWith("cc-test-subject-")) {
             clearTimeout(timeout);
+            // Deregister should trigger "reset", not "expired" (timeout)
+            console.log(`Peer offline reason: ${reason}`);
             resolve(Date.now());
           }
         });

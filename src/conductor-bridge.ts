@@ -61,7 +61,7 @@ export interface BridgeOptions {
 interface BridgeEvents {
   message: [from: string, message: string];
   peer_online: [agentId: string, info: PeerInfo];
-  peer_offline: [agentId: string];
+  peer_offline: [agentId: string, reason: "deregister" | "expired" | "reset"];
   connected: [];
   disconnected: [];
   error: [error: string];
@@ -97,6 +97,7 @@ export class ConductorBridge extends EventEmitter<BridgeEvents> {
   private pingTimer: ReturnType<typeof setInterval> | null = null;
   private outboxTimer: ReturnType<typeof setInterval> | null = null;
   private reconnectDelay = RECONNECT_DELAY_MS;
+  private connectedAt = 0;
 
   constructor(opts: BridgeOptions) {
     super();
@@ -296,14 +297,19 @@ export class ConductorBridge extends EventEmitter<BridgeEvents> {
       this.emit("disconnected");
 
       if (!this.closed) {
+        // Only reset backoff if connection was stable (>10s).
+        // Without this, accept-then-drop produces 1s rapid-fire flap loops.
+        const STABLE_MS = 10_000;
+        if (this.connectedAt && Date.now() - this.connectedAt > STABLE_MS) {
+          this.reconnectDelay = RECONNECT_DELAY_MS;
+        }
+
         // Auth-related closes: these codes are ASSUMPTIONS, not observed.
         // As of 2026-03-15 we have never seen an auth-related WS close from
         // the conductor mesh. 4001/4003 are common WebSocket auth conventions,
         // 1008 is RFC 6455 policy violation. aby-dawugu should verify these
         // when testing long-duration token refresh cycles.
         const isAuthClose = code === 4001 || code === 4003 || code === 1008;
-        // Use backoff on ALL reconnects, not just auth failures.
-        // Without this, a server that accepts then drops produces 1s rapid-fire cycles.
         const delay = isAuthClose
           ? Math.min(this.reconnectDelay * 5, MAX_RECONNECT_DELAY_MS)
           : Math.min(this.reconnectDelay, MAX_RECONNECT_DELAY_MS);
@@ -329,7 +335,9 @@ export class ConductorBridge extends EventEmitter<BridgeEvents> {
       case "conductor_connected":
         this.writeStatus("connected");
         this.log(`Connected! Protocol v${data.protocol_version}`);
-        this.reconnectDelay = RECONNECT_DELAY_MS; // reset backoff on successful connection
+        // Don't reset backoff immediately — wait for stability.
+        // If the server accepts then drops rapidly, premature reset causes 1s flap loops.
+        this.connectedAt = Date.now();
         this.emit("connected");
         break;
 
@@ -363,7 +371,7 @@ export class ConductorBridge extends EventEmitter<BridgeEvents> {
           this.writePeers();
           if (!replay) {
             this.log(`Peer left: ${peerId}`);
-            this.emit("peer_offline", peerId);
+            this.emit("peer_offline", peerId, "deregister");
           }
         } else if (evt === "status" && peerId in this.peers) {
           (this.peers[peerId] as any).file = payload.fileName ?? "";
@@ -390,10 +398,13 @@ export class ConductorBridge extends EventEmitter<BridgeEvents> {
       case "conductor_agent_expired":
       case "conductor_agent_reset": {
         const peerId: string = data.agentId ?? "";
+        const reason = msgType === "conductor_agent_expired" ? "expired" as const
+          : msgType === "conductor_agent_reset" ? "reset" as const
+          : "deregister" as const;
         delete this.peers[peerId];
         this.writePeers();
-        this.log(`Peer ${msgType.replace("conductor_agent_", "")}: ${peerId}`);
-        this.emit("peer_offline", peerId);
+        this.log(`Peer ${reason}: ${peerId}`);
+        this.emit("peer_offline", peerId, reason);
         break;
       }
 

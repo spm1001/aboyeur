@@ -161,6 +161,9 @@ function buildEnv(opts: SpawnAgentOptions): NodeJS.ProcessEnv {
   if (opts.meshAgentId) {
     meshEnv.MESH_AGENT_ID = opts.meshAgentId;
     meshEnv.MESH_ROLE = opts.meshRole ?? "user";
+  } else {
+    // Suppress auto-generated mesh identity for daemon-spawned sessions
+    meshEnv.MESH_DISABLED = "1";
   }
   return { ...env, ...HEADLESS_ENV, ...meshEnv };
 }
