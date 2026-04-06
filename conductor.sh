@@ -120,9 +120,23 @@ check_stuck() {
 
 latest_handoff_has_escalation() {
     # Check if the most recent handoff contains HUMAN REVIEW NEEDED
-    local encoded_path
-    encoded_path=$(echo "$PROJECT_DIR" | tr '/.' '-')
-    local handoff_dir="$HOME/.claude/handoffs/$encoded_path"
+    # Primary: .bon/handoffs/ (walk up from PROJECT_DIR)
+    # Fallback: legacy ~/.claude/handoffs/{encoded}
+    local handoff_dir=""
+    local walk="$PROJECT_DIR"
+    while [ "$walk" != "/" ]; do
+        if [ -d "$walk/.bon/handoffs" ]; then
+            handoff_dir="$walk/.bon/handoffs"
+            break
+        fi
+        walk=$(dirname "$walk")
+    done
+
+    if [ -z "$handoff_dir" ]; then
+        local encoded_path
+        encoded_path=$(echo "$PROJECT_DIR" | tr '/.' '-')
+        handoff_dir="$HOME/.claude/handoffs/$encoded_path"
+    fi
 
     if [ ! -d "$handoff_dir" ]; then
         return 1
