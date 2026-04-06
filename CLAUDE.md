@@ -1,6 +1,6 @@
 # Aboyeur — Project Context
 
-Multi-session orchestrator. A **daemon** (always-on trigger watcher, just code) wakes an **aboyeur** (persistent Claude that holds goals and routes work). The aboyeur spawns **one-shot Claudes** for simple tasks or **project manager Claudes** for multi-session work. PMs spawn **workers** and **reflectors**. All Claude sessions are side-by-side pods under the Gueridon bridge — the hierarchy is informational, not structural.
+Multi-session orchestrator built on a flat peer model. A **daemon** (always-on trigger watcher, just code) watches the world and spawns Claude sessions. Claudes communicate as **peers** via the Anthropic conductor mesh (`<channel>` tags) — no hierarchy, no management layer. Coordination lives in bons and .inbox/, not in a conductor Claude.
 
 Read `docs/architecture-decisions.md` for the full design rationale, rejected alternatives, and reference implementations to crib from.
 
@@ -8,71 +8,52 @@ Read `docs/architecture-decisions.md` for the full design rationale, rejected al
 
 ```
 Daemon (Node.js, always-on, no intelligence)
-  ├── polls: Gmail API, cron, filesystem, webhooks
+  ├── polls: Gmail API, cron, filesystem, .inbox/, webhooks
   ├── normalizes triggers → SQLite queue
   ├── drains queue through per-context FIFO (max 3 concurrent)
-  └── spawns aboyeur via spawnAgent() — the only direct spawn
+  └── spawns Claudes via spawnAgent()
 
-Aboyeur (persistent Claude, minimal context)
-  ├── holds goals (bon outcomes), not plans
-  ├── routes: one-shot for simple tasks, PM for multi-session work
-  ├── sees only summaries and escalations from PMs
-  └── restartable — goals live in bons
-
-PM Claude (medium-lived, project-scoped, human simulator)
-  ├── reads bon state (structured, via --json) for ONE project
-  ├── manages the beat: work → review → route
-  ├── spawns workers and reflectors via Gueridon bridge
-  ├── monitors via filtered event stream (eyesight filter)
-  ├── deep in the weeds, reports progress lines to aboyeur
-  └── disposable — restarts from bon state if it dies
-
-One-shot Claude (single-session tasks)
-  ├── triage an email, read an article, check a status
-  └── returns summary to aboyeur, done
-
-Workers / Reflectors (spawned by PM via Gueridon)
-  ├── workers: see a directory, CLAUDE.md, and bons — oblivious
-  ├── reflectors: fresh-eyes review, structured verdicts
-  └── both write handoffs that the PM reads
+Claudes (peers on the conductor mesh)
+  ├── one-shot: triage an email, check a status, exit
+  ├── peer reviewer: read code, send observations via mesh, exit
+  ├── conversational: two Claudes discuss a design decision
+  ├── beat worker: autonomous code task (beat.ts pattern)
+  └── all coordinate via bons, .inbox/, and mesh — no PM layer
 ```
 
-### Process vs Information
+### Communication — Transport Shapes Dynamics
 
-```
-Process reality:     Gueridon bridge → [session] [session] [session] ...
-                     All peers. Bridge doesn't know about hierarchy.
+How a message arrives determines how Claude treats it:
 
-Information flow:    Aboyeur ←summary── PM ←verdict── Reflector
-                                         PM ──spawns→ Worker
-                     Aboyeur ←summary── One-shot
-```
+| Channel | Arrives as | Dynamic |
+|---------|-----------|---------|
+| Conductor mesh (Channels MCP) | `<channel>` tag | Peer — honest exchange, no ranking |
+| Guéridon stdin | User message | Authority — trained deference |
+| .inbox/ file | Read during /open | Neutral — evaluative |
 
-Each level up sees less. Workers produce the most tokens, PMs see summaries, the aboyeur sees one-liners. The eyesight filter operates at every boundary.
+Use mesh for peer-to-peer, stdin for authority/direction. Don't mix them.
 
 ### Session Naming Convention
 
 | Session type | Pattern | Example |
 |---|---|---|
-| Aboyeur | `aboyeur-{trigger}-{HHMMSS}` | `aboyeur-gmail-203015` |
-| PM | `pm-{outcome-id}-{seq}` | `pm-aby-zehiwo-01` |
-| Worker | `worker-{action-id}-{seq}` | `worker-aby-sanimu-01` |
-| Reflector | `reflector-{action-id}-{seq}` | `reflector-aby-sanimu-01` |
 | One-shot | `oneshot-{trigger}-{HHMMSS}` | `oneshot-gmail-203022` |
+| Peer reviewer | `reviewer-{target}-{HHMMSS}` | `reviewer-aboyeur-203015` |
+| Beat worker | `worker-{action-id}-{seq}` | `worker-aby-sanimu-01` |
+| Beat reflector | `reflector-{action-id}-{seq}` | `reflector-aby-sanimu-01` |
 
-### The Beat Pattern (PM level)
+### The Beat Pattern (autonomous code tasks)
+
+beat.ts implements a worker→reflector cycle for unsupervised code work. This is one pattern among several, not the organising architecture:
 
 ```
-PM reads bon state
-  → spawns worker-aby-sanimu-01
+bon work <action-id>
+  → spawn worker (80 turns, full tool access)
     → worker finishes, writes handoff
-  → spawns reflector-aby-sanimu-01
-    → reflector writes {"approved": true, "issues": [...]}
-  → PM reads verdict
-  → approved? bon done, pick next action, report to aboyeur
-  → rejected? spawns worker-aby-sanimu-02 with fix instructions
-  → escalate? drafts email to Sameer via mise
-PM reads bon state again...
+  → spawn reflector (40 turns, no Edit tool)
+    → writes .beat/APPROVED or .beat/ISSUES.md
+  → approved? bon done, pick next action
+  → rejected? spawn new worker with fix instructions
 ```
 
 ### GTD Mapping
@@ -80,9 +61,9 @@ PM reads bon state again...
 | GTD | Aboyeur equivalent |
 |---|---|
 | Standalone next action | One-shot: trigger → single Claude → done |
-| Project (multi-step) | PM Claude manages the beat sequence |
-| Areas of focus / goals | Aboyeur's persistent outcome set |
-| Weekly review | HEARTBEAT: are PMs alive? escalations? drift? |
+| Project (multi-step) | Sequence of peer sessions coordinated via bons |
+| Areas of focus / goals | Bon outcomes |
+| Weekly review | HEARTBEAT cron trigger |
 
 ### Key Files
 
@@ -109,9 +90,9 @@ PM reads bon state again...
 | `service/aboyeur-daemon.service` | Systemd user unit for hezza | Medium |
 | `HEARTBEAT.md` | Periodic health check checklist | Low |
 
-### Mesh Integration (aby-nenabo — in progress)
+### Mesh Integration (validated)
 
-CC sessions join the Anthropic conductor mesh (`bridge.claudeusercontent.com`) via a Channels MCP server, not the PTY sidecar. The Channels API (CC v2.1.80+, research preview) lets an MCP server push events directly into a CC session as `<channel>` tags — no PTY injection, no file polling.
+CC sessions join the Anthropic conductor mesh (`bridge.claudeusercontent.com`) via a Channels MCP server. The Channels API (CC v2.1.80+, research preview) lets an MCP server push events directly into a CC session as `<channel>` tags — no PTY injection, no file polling.
 
 **How it works:** `conductor-channel.ts` wraps `ConductorBridge` as an MCP Channels server. CC is started with `--dangerously-load-development-channels server:conductor-channel`. Incoming mesh messages arrive as `<channel source="conductor-channel">` tags. Claude sends via `send_message` MCP tool, discovers peers via `mesh_peers`.
 
@@ -156,10 +137,10 @@ Stable IDs mean session restart re-registers the same agentId rather than appear
 ## Conventions
 
 - **TypeScript** for all new code (daemon, conductor, spawnAgent)
-- **Gueridon's spawn pattern** for daemon→conductor (`claude` CLI + stream-json)
-- **Gueridon bridge API** for conductor→workers (at one remove)
+- **Gueridon's spawn pattern** for daemon spawning (`claude` CLI + stream-json)
+- **Gueridon bridge API** for session lifecycle (spawn, list, kill, events)
 - **Channels MCP** for mesh connectivity (`conductor-channel.ts`, not sidecar)
-- **MESH_ENABLED env var** to gate mesh on/off per spawn — never default in CC_BASE_FLAGS
+- **MESH_AGENT_ID env var** to gate mesh on/off per spawn — absent means no mesh
 - **Max subscription** auth for all agents
 - **Bon `--json`** for structured work state (not markdown parsing)
 - Prompts: direct, concrete instructions over abstract principles
@@ -180,4 +161,4 @@ End-to-end test harness (aby-wesaci, complete) with mock spawn injection. Tests 
 
 ## Status
 
-Pre-alpha. Daemon core plumbing built and tested: `spawnAgent()` → `TriggerDB` → `TriggerLoop` → `ContextQueue` → `daemon.ts` integration. Mesh connectivity planned via Channels MCP (aby-nenabo) replacing the PTY sidecar approach. Next active work: aby-nenabo (conductor-channel.ts), cio-jurefa (transport capture in ~/Repos/claude-in-office), aby-sanimu (Gmail trigger, blocked on aby-hemimi).
+Pre-alpha. Daemon plumbing built and tested. Mesh connectivity validated via Channels MCP (conductor-channel.ts). Peer review loop proven with live mesh round-trips. Interactive mode supersession fix in place (aby-tarafo). Next: aby-pacojo (.inbox/ fallback for peer review without mesh), aby-sanimu (Gmail trigger), aby-metepe (conversational peer patterns).
