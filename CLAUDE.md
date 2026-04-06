@@ -18,7 +18,7 @@ Claudes (peers on the conductor mesh)
   ├── peer reviewer: read code, send observations via mesh, exit
   ├── conversational: two Claudes discuss a design decision
   ├── beat worker: autonomous code task (beat.ts pattern)
-  └── all coordinate via bons, .inbox/, and mesh — no PM layer
+  └── all coordinate via bons and mesh — no management layer
 ```
 
 ### Communication — Transport Shapes Dynamics
@@ -69,7 +69,7 @@ bon work <action-id>
 
 | File | Purpose | Sensitivity |
 |------|---------|-------------|
-| `src/spawn-agent.ts` | spawnAgent() — spawn claude, collect output, resume sessions | High — daemon→conductor spawning |
+| `src/spawn-agent.ts` | spawnAgent() — spawn claude, collect output, resume sessions | High — all spawning goes through here |
 | `src/trigger-db.ts` | SQLite trigger queue — schema, dedup, cursors, crash recovery | High — daemon state lives here |
 | `src/trigger-loop.ts` | Polling loop that drains the trigger queue | Medium |
 | `src/context-queue.ts` | Per-context FIFO with concurrency limits and lane policies | High — prevents runaway spawning |
@@ -148,12 +148,12 @@ Stable IDs mean session restart re-registers the same agentId rather than appear
 
 ## Dependencies
 
-- **claude CLI** — daemon→conductor spawning via stream-json
+- **claude CLI** — session spawning via stream-json
 - **better-sqlite3** — trigger queue, cursor tracking
 - **Bon CLI** (`bon`) — work tracking, structured state via `--json`
 - **Jeton** (`~/Repos/jeton/`) — OAuth token management for Gmail polling
 - **Mise** (`~/Repos/mise-en-space/`) — Google Workspace MCP (email draft/reply/fetch)
-- **Gueridon** (`~/Repos/gueridon/`) — bridge API for conductor→worker spawning (runtime dependency, not just reference)
+- **Gueridon** (`~/Repos/gueridon/`) — bridge API for session lifecycle (spawn, list, kill, events)
 
 ## Testing
 

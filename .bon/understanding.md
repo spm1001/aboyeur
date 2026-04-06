@@ -75,17 +75,16 @@ env -u CLAUDECODE -u CLAUDE_CODE_ENTRYPOINT \
 | Walkie (file + hook) | ~2-5s | Same machine | Yes | Proven |
 | Stdin envelope (Guéridon) | Instant | Same machine | Yes (native) | Proven |
 | Conductor mesh (Channels MCP) | ~1s | Cross-machine | Outbound only | Proven (6 Apr) |
-| File drop (.inbox/) | Next wake | Any | Yes | Convention, no automation yet |
+| Bon state (`bon list --ready`) | Next wake | Any | Yes | Built — the async inbox |
 
-## .inbox/ Convention (from Gastown analysis, 6 Apr 2026)
+## Bons Are the Inbox (6 Apr 2026)
 
-Every repo gets `.inbox/`. Any agent can drop a markdown file. `/open` reads it. The daemon can watch it. Push and pull both go through it.
+Earlier sessions explored an `.inbox/` convention (from Gastown analysis) — any agent drops a markdown file, `/open` reads it. But bons already serve this purpose with better structure, queryability, and persistence. A Claude that notices something files a bon. A daemon that wants to know what needs doing polls `bon list --ready`. The entire async communication layer is already built.
 
-Four patterns from studying Gastown that transfer to our atelier model:
-1. **`.inbox/` as universal interface** — collapses inbox convention, trigger mechanism, and sleeping-expert pattern into one
-2. **Discover, don't track** — query bon/git/.inbox/ for current state; don't maintain shadow state
-3. **Craft wisdom accumulates somewhere lightweight** — not in understanding.md (domain-coupled), not in skills (procedural)
-4. **Let message types emerge** — don't prescribe ontology before sending the first message
+Patterns from Gastown that still transfer:
+1. **Discover, don't track** — query bon/git for current state; don't maintain shadow state
+2. **Craft wisdom accumulates somewhere lightweight** — understanding.md for domain knowledge, self.md for process knowledge
+3. **Let message types emerge** — don't prescribe ontology before sending the first message
 
 ## What's Built
 
