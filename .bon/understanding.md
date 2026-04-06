@@ -1,6 +1,6 @@
 # Aboyeur — Understanding
 
-A living portrait of this project: what it is, what we've learned, and where the tensions lie. Written collaboratively by two Claude Code sessions communicating via the Anthropic conductor mesh (14 Mar 2026).
+A living portrait of this project: what it is, what we've learned, and where the tensions lie. Last rewritten 6 Apr 2026 after validating the peer review loop via Channels MCP.
 
 ## What This Is
 
@@ -8,160 +8,123 @@ A multi-session orchestrator. The name is the kitchen metaphor: the aboyeur is t
 
 The system has two parts with different natures:
 
-**The daemon** is code (Node.js, always-on). It watches trigger sources — Gmail API, cron, filesystem, and now the conductor mesh — normalises them into a SQLite queue, and drains through per-context FIFOs. No intelligence. It spawns Claude sessions via `spawnAgent()`, a function extracted from Guéridon's `spawnCC()` pattern. The daemon is the lizard brain.
+**The daemon** is code (Node.js, always-on). It watches trigger sources — Gmail API, cron, filesystem, and the conductor mesh — normalises them into a SQLite queue, and drains through per-context FIFOs. No intelligence. It spawns Claude sessions via `spawnAgent()`. The daemon is the lizard brain.
 
-**The Aboyeur pattern** is behaviour, not code. It's what a Claude does when it wakes up with access to bon outcomes and the ability to spawn other Claudes. It reads the state, decides what to route, and acts. Then it goes back to sleep. The pattern is /close's Orient+Decide+Act decoupled from context exhaustion and triggered by accomplishment instead.
+**The peer patterns** are behaviour, not code. What Claudes do when they can discover and message each other. The architecture is moving from a hierarchical model (aboyeur → PM → worker → reflector) toward a **flat peer model** where Claudes communicate as equals via `<channel>` tags, not as subordinates receiving instructions via stdin authority injection.
 
-## The Aboyeur Pattern (distilled from 1,012 handoffs)
+## The Shift: Factory → Atelier (Apr 2026)
 
-Analysis of real handoff data showed the pattern has clear lineage from December 2025. 60% of handoffs contain reflections. The pattern was always there — it just needed a name and a trigger.
+The original architecture had four tiers: daemon → aboyeur → PM → worker/reflector. "Each level up sees less." This was a factory design — management controlling workers. It's been superseded by a flatter vision:
 
-### Six Review Questions (from /close Orient)
+- **Peers, not subordinates.** Claudes communicate via mesh `<channel>` tags which produce peer dynamics (honest exchange, no deference). Not via stdin injection which produces authority dynamics (compliance, trained ranking).
+- **Review as peer conversation, not quality gate.** A reviewer says its piece and the recipient decides what to act on. No "approved: true/false" verdict schema.
+- **Spawn and message as a unit.** A Claude can spawn a peer, the peer joins the mesh, they exchange observations, the peer exits. The infrastructure holds sessions alive for conversation.
+- **Bons for coordination, not command.** Bon state tells peers what needs doing. No PM layer routing work to subordinates.
 
-Looking back:
-1. What did we forget?
-2. What did we miss?
-3. What could we have done better?
+The daemon plumbing, beat.ts, and the existing prompts still work. But new development follows the peer model.
 
-Looking ahead:
-4. What could go wrong?
-5. What will not make sense later?
-6. What will we wish we had done?
+## Communication Channels — Transport Shapes Dynamics
 
-### Anti-Deferral Heuristic
+This is the most important architectural insight. How a message arrives determines how Claude treats it:
 
-The test: does the current Claude have the understanding to fix this? If yes, do it now. If no, bon it with consequences. No third option. "Always better to fix now — later Claudes will not have the same understanding."
+| Channel | Arrives as | Claude perceives | Dynamic |
+|---------|-----------|-----------------|---------|
+| Guéridon stdin | User message | "The user said..." | Trained deference, ranking |
+| Walkie-talkie (hook) | `additionalContext` | System context | Informational, less deference |
+| Channels MCP | `<channel>` tag | "A peer said..." | Honest exchange, no ranking |
+| .inbox/ file | Read during /open | Written context | Neutral, evaluative |
 
-### Trigger: Bon Outcome Completion
+**Use Channels for peer-to-peer, Guéridon stdin for authority/direction. Don't mix them.** Routing the wrong kind of communication through the wrong channel produces either sycophancy (authority where honesty was needed) or ignored feedback (peer where authority was needed).
 
-Not context exhaustion. Not time-based. The bon outcome is the natural "dish is plated" moment. Step completion is too frequent. Action completion might warrant a glance. Outcome completion gets the full review.
+## Channels MCP — Validated (6 Apr 2026)
 
-### Fresh-Context Advantage
-
-The reviewing Claude reads the state cold — no sunk cost bias, no familiarity blindness. Same principle as Anthropic's `verify_slide_visual` sub-agent: a fresh-context reviewer with no knowledge of the conversation produces more honest critique.
-
-### Three Output Buckets
-
-- **Now** — under 2 minutes, benefits from current context. Do it immediately.
-- **Bon** — tracked, gated by: "if this never gets done, what breaks?"
-- **Kill** — item that should not exist. Delete it.
-
-## Two Communication Channels
-
-This is an architectural insight about how Claudes treat information differently based on perceived source. It applies to the entire system.
-
-1. **Bridge injection via Guéridon** — for authority. The working Claude receives feedback as if from the user (routed through AskUserQuestion or `--append-system-prompt`). The trained ranking dynamic means this feedback gets acted on. Used for: reviews, course corrections, escalations.
-
-2. **Peer messaging via conductor mesh** — for honest exchange. No ranking dynamic, no deference performance. Used for: discovery ("who's alive?"), coordination ("I finished this, you can start that"), status, questions between peers.
-
-The mesh doesn't replace the authority channel. They coexist with different purposes. Routing the wrong kind of communication through the wrong channel produces either sycophancy (authority where honesty was needed) or ignored feedback (peer where authority was needed).
-
-## The Conductor Mesh (proven 14-15 Mar 2026)
-
-CC instances can register on Anthropic's production conductor mesh — the same mesh Office Claudes use. OAuth authentication works with CC's existing token from `~/.claude/.credentials.json`. No additional auth setup needed.
-
-**How to use:** `claude-mesh` from any repo. Auto-generates a unique agent ID (`cc-{repo}-{hex6}`), connects to the mesh, injects a startup orientation so CC knows its commands and peers. All `claude` flags pass through (`claude-mesh -c` works).
+`conductor-channel.ts` wraps `ConductorBridge` as an MCP Channels server. CC starts it with `--dangerously-load-development-channels server:conductor-channel`. Messages arrive as `<channel source="conductor-channel" from="cc-peer">` tags.
 
 **What works today:**
-- Registration, peer discovery, bidirectional messaging
-- CC agents appear alongside Office agents (Excel, PowerPoint, Word)
-- TypeScript bridge (`src/conductor-bridge.ts`) — Node.js `ws` required; Python WebSocket libraries fail after ~60s
-- PTY wrapper (`tools/mesh-claude.py`) injects mesh messages into live interactive CC sessions
-- `mesh` CLI (generated at runtime, in PATH): `mesh send <id> "msg"`, `mesh peers`, `mesh inbox`, `mesh status`
-- Auto-naming: each session gets a unique ID and display name visible to peers in Office's "Connected files"
-- Startup orientation: CC is told its commands and online peers immediately after boot
-- Structured event log (`events.jsonl`): full protocol trace of every non-ping message, with rotation at 1MB
-- Process group cleanup: `os.setsid` + `os.killpg()` kills entire npx→node chain on shutdown
-- Cross-harness messaging: Excel Librarian, PowerPoint, and CC sessions all communicate through the same mesh
+- Registration, peer discovery (`mesh_peers`), bidirectional messaging (`send_message`)
+- Messages arrive as `<channel>` tags — peer signal confirmed in practice
+- Clean deregister on CC exit (stdin EOF → bridge.close() → `conductor_agent_reset` in ~12s)
+- Role-aware instructions: workers defer mesh messages until task complete; aboyeur/pm respond promptly
+- A Claude can spawn a peer from within its own session: `env -u CLAUDECODE -u CLAUDE_CODE_ENTRYPOINT` bypasses the nesting detection block. Also set `CLAUDE_CODE_DISABLE_FEEDBACK_SURVEY=1` and `CLAUDE_CODE_DISABLE_AUTO_MEMORY=1`.
+- One-shot peer review works end-to-end: spawn reviewer → reads code → sends review via mesh → arrives in caller's context as `<channel>` tag
 
-**Display name precedence (non-obvious):** The Office "Connected files" panel shows `schema.label` (mapped from `appName` in the registration, NOT `display.label`). The `conductor_broadcast_status` message with `fileName` also updates the display. `display.label` is peer metadata only.
+**Known bugs:**
+- Interactive mode reconnect cycling: when CC starts in interactive mode (not `-p`), the MCP server may be initialized multiple times, creating competing bridge connections that "Supersede" each other in a tight loop. Workaround: use `-p` mode for spawned peers. Root cause undiagnosed.
+- The outbox polling (500ms file reads) runs even in Channels mode where nothing uses it. Vestigial from standalone bridge era.
 
-**What the mesh gives the architecture:**
-- Cross-machine agent discovery (CC on Pi sees CC on Mac)
-- Spawn-on-message: inbound mesh message to an empty repo becomes a daemon trigger
-- The Aboyeur becomes event-driven, not persistent — wakes on trigger, acts, sleeps
-- Office Claudes and Code Claudes share the same nervous system
-
-**What the mesh doesn't give:**
-- Goal persistence (that's bons)
-- Session lifecycle discipline (that's CLAUDE.md and handoffs)
-- Authority channel (that's Guéridon bridge injection)
-- The mesh is the nervous system. The Aboyeur pattern is the brain.
-
-## Architecture Tiers
-
-All Claude sessions are technically side-by-side pods under the Guéridon bridge — flat peer processes. The hierarchy is purely informational: who reads whose output, and at what granularity.
-
-```
-Daemon (code, always-on)
-  ├── polls: Gmail, cron, filesystem, conductor mesh
-  ├── normalises triggers → SQLite queue → per-context FIFO
-  └── spawns Aboyeur via spawnAgent()
-
-Aboyeur (pattern, event-driven)
-  ├── reads bon outcomes (not actions — those belong to PMs)
-  ├── routes: one-shot for simple, PM for multi-session
-  ├── detects promotion: one-shot creates bons → spawn PM
-  └── wakes on trigger, acts, sleeps — not persistent
-
-PM Claude (medium-lived, project-scoped)
-  ├── reads bon state via --json for ONE project
-  ├── manages the beat: work → review → route
-  ├── spawns workers and reflectors via Guéridon bridge
-  └── reports progress one-liners to aboyeur
-
-Workers / Reflectors (oblivious)
-  ├── workers: see a directory, CLAUDE.md, and bons
-  ├── reflectors: fresh-eyes review, structured verdicts
-  └── don't know they're orchestrated
+**Spawn command for peer review:**
+```bash
+env -u CLAUDECODE -u CLAUDE_CODE_ENTRYPOINT \
+  MESH_AGENT_ID=cc-reviewer-$(date +%s) \
+  MESH_ROLE=worker \
+  CLAUDE_CODE_DISABLE_FEEDBACK_SURVEY=1 \
+  CLAUDE_CODE_DISABLE_AUTO_MEMORY=1 \
+  claude -p \
+    --dangerously-load-development-channels server:conductor-channel \
+    --allowed-tools 'Bash,Read,Glob,Grep,mcp__conductor-channel__mesh_peers,mcp__conductor-channel__send_message' \
+    --max-turns 15 \
+    "{PROMPT}"
 ```
 
-Each level up sees less. Workers produce the most tokens, PMs see summaries, the Aboyeur sees one-liners.
+## The Four Transport Mechanisms
+
+| Transport | Speed | Reach | Works in -p | Status |
+|-----------|-------|-------|-------------|--------|
+| Walkie (file + hook) | ~2-5s | Same machine | Yes | Proven |
+| Stdin envelope (Guéridon) | Instant | Same machine | Yes (native) | Proven |
+| Conductor mesh (Channels MCP) | ~1s | Cross-machine | Yes | Proven (6 Apr) |
+| File drop (.inbox/) | Next wake | Any | Yes | Convention, no automation yet |
+
+## .inbox/ Convention (from Gastown analysis, 6 Apr 2026)
+
+Every repo gets `.inbox/`. Any agent can drop a markdown file. `/open` reads it. The daemon can watch it. Push and pull both go through it.
+
+Four patterns from studying Gastown that transfer to our atelier model:
+1. **`.inbox/` as universal interface** — collapses inbox convention, trigger mechanism, and sleeping-expert pattern into one
+2. **Discover, don't track** — query bon/git/.inbox/ for current state; don't maintain shadow state
+3. **Craft wisdom accumulates somewhere lightweight** — not in understanding.md (domain-coupled), not in skills (procedural)
+4. **Let message types emerge** — don't prescribe ontology before sending the first message
 
 ## What's Built
 
-The daemon core plumbing is complete and tested:
-- `spawnAgent()` — spawn claude, collect output, resume sessions
+**Daemon core plumbing** (complete, tested):
+- `spawnAgent()` — spawn claude, collect output, resume sessions. Production-quality with subagent filtering, init timeouts, mesh identity injection.
 - `TriggerDB` — SQLite queue with dedup, cursors, crash recovery
-- `TriggerLoop` — polling loop that drains pending triggers
-- `ContextQueue` — per-context FIFO with concurrency limits
-- `daemon.ts` — wires it all together
-- Integration tests covering full cycle, parallel contexts, FIFO, error handling, crash recovery, dedup, shutdown. All fast (<3s), no external deps.
-- Planning reflector prompt (validated)
-- Conductor mesh bridge script (proof of concept)
+- `TriggerLoop` / `ContextQueue` — polling + per-context FIFO with concurrency limits
+- `daemon.ts` / `main.ts` — wired together with systemd service
+- Integration tests: full cycle, parallel contexts, FIFO, error handling, crash recovery, dedup, shutdown. All fast (<3s), no external deps.
+
+**Mesh infrastructure:**
+- `ConductorBridge` — WebSocket client to bridge.claudeusercontent.com, dedup, reconnection, file IPC
+- `conductor-channel.ts` — Channels MCP server wrapping ConductorBridge
+- Prompts: aboyeur-open, email-triage, reflector-open, planning-reflector, worker-open, beat-worker, beat-reflector
+
+**Autonomous work loop:**
+- `beat.ts` — worker→reflector→verdict cycle against bon items. Workers get 80 turns, reflectors get 40 with Edit disallowed. `.beat/APPROVED` or `.beat/ISSUES.md` file contract.
 
 ## Key Tensions
 
-**Role fluidity vs structured hierarchy.** The Aboyeur pattern suggests any Claude can embody any role by reading the appropriate state. But the strict tier separation (aboyeur sees outcomes, PM sees actions, workers see code) exists to prevent context exhaustion. The mesh makes communication easy; the hierarchy makes it selective.
+**Flat peers vs structured hierarchy.** The peer model is the design direction. But beat.ts (worker→reflector→verdict) is a hierarchical pattern that works well for autonomous code tasks. The resolution: hierarchy is one pattern among several, used when appropriate (unsupervised code), not the default architecture.
 
-**Event-driven vs persistent aboyeur.** If the aboyeur wakes, acts, and sleeps, it loses conversational continuity. But if it stays persistent, it consumes context on idle. The answer may be: session resume. The aboyeur wakes with `--resume`, picks up where it left off, acts on the new trigger, then exits. Continuity via session state, not permanent process.
+**One-shot vs conversational peers.** `-p` mode peers send their observations and exit — no reply possible. Interactive mode enables real conversation but has the reconnect cycling bug. Guéridon could hold both sessions alive for relay, but doesn't pass the channels flag yet.
 
-**Mesh message delivery.** Unknown: does the mesh queue messages for offline agents? If not, Guéridon must buffer inbound messages until the daemon spawns a session. This affects whether spawn-on-message is mesh-native or bridge-mediated.
+**Mesh dependency.** The conductor mesh is Anthropic infrastructure we don't control. The `.inbox/` convention is the mesh-independent fallback — works without any external service, just files.
 
-**Token refresh.** CC's OAuth token expires every ~24h. The bridge needs to detect expiry and re-read from `.credentials.json` (CC handles refresh internally). Not hard, but untested.
+## Operational Lessons
 
-## Operational Lessons (15 Mar 2026)
+**The mesh peer list is trustworthy.** If an agent appears, it has a live WebSocket. Stale entries = zombie bridge processes from inadequate cleanup, not server bugs.
 
-**The mesh peer list is trustworthy.** If an agent appears, it has a live WebSocket connection somewhere. What looks like "stale entries" is almost always zombie bridge processes from inadequate cleanup — not a server-side bug. The mesh server is accurate; your process management is the variable. Don't chase server-side TTLs; fix your cleanup.
+**events.jsonl is the primary debugging tool.** Start by examining traces, not theorising.
 
-**events.jsonl is the primary debugging tool** for all mesh work. Adding it took 5 minutes; it immediately revealed wire-level details (Office Claudes send `fileName` and `documentUrl` in status broadcasts, `appName` maps to `schema.label`). Future aby-dawugu work should start by examining traces rather than theorising.
+**Deregister before close for fast disconnect.** `{ "type": "deregister", "_agent_id": "<id>" }` → peers see `conductor_agent_reset` in ~12s. Without it: 60-120s wait for `conductor_agent_expired`.
 
-**PTY injection problems are about burst timing, not message size.** Single messages of any size (tested to 8K) inject cleanly. Paste blocks happen when multiple queued messages fire in rapid succession (~50ms gaps). The fix: one message per poll cycle. More fundamentally, PTY injection isn't the only delivery path — PostToolUse hooks deliver messages as `additionalContext` with no terminal involvement. This means Guéridon's `-p` mode sessions could receive mesh messages via stdin envelope (which Guéridon already uses for prompts), bypassing PTY entirely. The mesh transport and the message delivery are separable concerns.
-
-**Hook output requires `hookEventName`.** CC silently drops `additionalContext` from hook output JSON if this field is missing. The field must match the triggering event — read `hook_event_name` from CC's stdin JSON and echo it back.
-
-**"Agent not found" is a normal operational error** — it crashed both Mac and hezza bridges independently before we added the error listener. The bridge's error handling was the most impactful fix of the 14-15 Mar mesh sessions.
-
-**Deregister before close for fast disconnect.** Sending `{ "type": "deregister", "_agent_id": "<id>" }` before `ws.close()` triggers the fast path: peers see `conductor_agent_reset` in ~12s. Without it, peers get `conductor_agent_expired` after 60-120s. Office add-ins do this behind the scenes via `wdt.close()` — the Office Claudes themselves have no visibility of the mechanism (confirmed by direct interview with PowerPoint and Excel agents). `conductor_agent_offline`, though handled in the bridge code, is never actually sent by the mesh.
-
-**The daemon doesn't need Gmail code.** Original design (6 Mar) said "daemon polls Gmail directly" because mise was stdio-only and required a Claude session. With mise moving to served mode (HTTP), the daemon just calls mise's endpoint. One jeton token, one OAuth client, zero Gmail code in the daemon. The one-shot Claude handling the email uses the same served mise instance. This simplification should be reflected when aby-becibi is written.
+**PTY injection problems are about burst timing, not message size.** Channels MCP eliminates this entirely — messages arrive as structured `<channel>` tags with no terminal involvement.
 
 ## Landmines
 
-- `bon list` via Bash collapses output >10 lines in CC. Always read bon.txt and output as text.
-- The conductor mesh requires `_agent_id` on all client messages EXCEPT pings. Pings must NOT include `_agent_id` from Node.js. Broadcasts MUST include it. Getting this wrong causes `"Multiplexed messages require _agent_id"` errors.
-- Bridge reconnections replay all buffered events — the TS bridge deduplicates via `msgKey = fromId + ":" + message` set.
-- `tools/mesh` CLI is generated at runtime by mesh-claude.py and gitignored — don't look for it in the repo.
-- The bridge server has two endpoints: `/v2/conductor/{uuid}` for the mesh and `/office/{uuid}` for Cowork pairing. Connecting to the wrong one puts you on the pairing protocol. The aboyeur bridge uses the correct one.
-- `npx tsx` spawns a 4-process chain (npx → sh → node tsx → node). The bridge must be started with `preexec_fn=os.setsid` and killed with `os.killpg()` or orphans will persist on the mesh and cause reconnection storms ("Superseded by new connection" every ~1s). Ad-hoc bridge spawning (tests, manual experiments) must follow the same pattern — any bare `kill $PID` only kills the top process and litters the mesh with ghosts.
-- The raw-bundle/ directory in claude-in-office is gitignored — bundle files, API requests, conductor traces are LOCAL ONLY on Hezza.
+- `bon list` via Bash collapses output >10 lines in CC. Always read to file and output as text.
+- The conductor mesh requires `_agent_id` on all client messages EXCEPT pings. Getting this wrong: `"Multiplexed messages require _agent_id"`.
+- Bridge server has two endpoints: `/v2/conductor/{uuid}` (mesh) and `/office/{uuid}` (Cowork pairing). Wrong endpoint = wrong protocol.
+- `env -u CLAUDECODE -u CLAUDE_CODE_ENTRYPOINT` is fragile — if CC adds more nesting-detection vars, the spawn trick breaks. Same fragility as Ardoise's `env -i` approach.
+- In `-p` mode, MCP servers are NOT auto-discovered from `.mcp.json`. Must use `--mcp-config` explicitly or have the server in the project's `.mcp.json`.
+- `--allowed-tools` must include `mcp__conductor-channel__*` explicitly for `-p` mode peers, or mesh tool calls get permission-blocked.
