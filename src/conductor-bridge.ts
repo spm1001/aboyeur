@@ -296,6 +296,22 @@ export class ConductorBridge extends EventEmitter<BridgeEvents> {
       this.writeStatus("disconnected");
       this.emit("disconnected");
 
+      // Superseded: another agent registered with our agentId. This happens when
+      // CC restarts the MCP server process during interactive init — two processes
+      // run briefly with the same identity. The old one must yield, not reconnect.
+      // Without this check, both processes reconnect on supersession, creating a
+      // flap loop that runs 3-8 rounds until the old process's stdin closes.
+      //
+      // NB: We match on the reason string because close code 1001 is too generic
+      // (also used for server restarts, where reconnection IS appropriate). If the
+      // conductor mesh changes this string, we regress to flapping — monitor for
+      // a more structured supersession signal in future protocol versions.
+      if (reasonStr === "Superseded by new connection") {
+        this.log("Superseded — yielding to new connection (not reconnecting)");
+        this.closed = true;
+        return;
+      }
+
       if (!this.closed) {
         // Only reset backoff if connection was stable (>10s).
         // Without this, accept-then-drop produces 1s rapid-fire flap loops.

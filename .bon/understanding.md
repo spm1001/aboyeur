@@ -1,6 +1,6 @@
 # Aboyeur — Understanding
 
-A living portrait of this project: what it is, what we've learned, and where the tensions lie. Last rewritten 6 Apr 2026 after validating the peer review loop via Channels MCP.
+A living portrait of this project: what it is, what we've learned, and where the tensions lie. Last rewritten 6 Apr 2026 after validating the peer review loop via Channels MCP. Contributions integrated 6 Apr 2026 (NONESSENTIAL_TRAFFIC blocker, session resume limitations).
 
 ## What This Is
 
@@ -48,8 +48,10 @@ This is the most important architectural insight. How a message arrives determin
 - A Claude can spawn a peer from within its own session: `env -u CLAUDECODE -u CLAUDE_CODE_ENTRYPOINT` bypasses the nesting detection block. Also set `CLAUDE_CODE_DISABLE_FEEDBACK_SURVEY=1` and `CLAUDE_CODE_DISABLE_AUTO_MEMORY=1`.
 - One-shot peer review works end-to-end: spawn reviewer → reads code → sends review via mesh → arrives in caller's context as `<channel>` tag
 
-**Known bugs:**
-- Interactive mode reconnect cycling: when CC starts in interactive mode (not `-p`), the MCP server may be initialized multiple times, creating competing bridge connections that "Supersede" each other in a tight loop. Workaround: use `-p` mode for spawned peers. Root cause undiagnosed.
+**Known limitations:**
+- **Inbound channels are mode-dependent.** Only fresh interactive sessions get full bidirectional channel push. `-p` mode is outbound-only (MCP tools work, bridge connects, `send_message` sends — but inbound `<channel>` tags never surface). Session resume (`-c`) is also outbound-only: channel listeners aren't registered on resume, only on fresh session init. This means spawned `-p` peers can send but not receive, and resumed sessions lose inbound mesh. The one-shot peer review pattern works because the reviewer only needs outbound; the caller in fresh interactive mode receives.
+- **`CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC` kills Channels silently.** This env var prevents feature flag fetches on startup, so the tengu gating channels never enables. Symptoms: MCP tools work fine (standard MCP), but channel push notifications fail silently. CC logs `--dangerously-load-development-channels ignored / Channels are not currently available`. Never set this for mesh-enabled sessions. `DISABLE_FEEDBACK_SURVEY` and `DISABLE_AUTO_MEMORY` are safe.
+- ~~Interactive mode reconnect cycling~~ **Fixed (aby-tarafo).** Root cause: CC spawns the MCP server process twice during interactive init. Both processes connect with the same agentId. The conductor mesh supersedes the first, which triggered a reconnect that superseded the second — flap loop. Fix: ConductorBridge now yields (sets `closed=true`) on close code 1001 / reason "Superseded by new connection" instead of reconnecting. Validated with live mesh test. Steps 4-5 (interactive CC validation) skipped — need session restart to pick up new build.
 - The outbox polling (500ms file reads) runs even in Channels mode where nothing uses it. Vestigial from standalone bridge era.
 
 **Spawn command for peer review:**
@@ -72,7 +74,7 @@ env -u CLAUDECODE -u CLAUDE_CODE_ENTRYPOINT \
 |-----------|-------|-------|-------------|--------|
 | Walkie (file + hook) | ~2-5s | Same machine | Yes | Proven |
 | Stdin envelope (Guéridon) | Instant | Same machine | Yes (native) | Proven |
-| Conductor mesh (Channels MCP) | ~1s | Cross-machine | Yes | Proven (6 Apr) |
+| Conductor mesh (Channels MCP) | ~1s | Cross-machine | Outbound only | Proven (6 Apr) |
 | File drop (.inbox/) | Next wake | Any | Yes | Convention, no automation yet |
 
 ## .inbox/ Convention (from Gastown analysis, 6 Apr 2026)
@@ -126,5 +128,7 @@ Four patterns from studying Gastown that transfer to our atelier model:
 - The conductor mesh requires `_agent_id` on all client messages EXCEPT pings. Getting this wrong: `"Multiplexed messages require _agent_id"`.
 - Bridge server has two endpoints: `/v2/conductor/{uuid}` (mesh) and `/office/{uuid}` (Cowork pairing). Wrong endpoint = wrong protocol.
 - `env -u CLAUDECODE -u CLAUDE_CODE_ENTRYPOINT` is fragile — if CC adds more nesting-detection vars, the spawn trick breaks. Same fragility as Ardoise's `env -i` approach.
+- `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC` looks harmless but silently kills Channels. If mesh isn't working, check this env var first — it's an env/feature-flag interaction, not a code bug.
 - In `-p` mode, MCP servers are NOT auto-discovered from `.mcp.json`. Must use `--mcp-config` explicitly or have the server in the project's `.mcp.json`.
 - `--allowed-tools` must include `mcp__conductor-channel__*` explicitly for `-p` mode peers, or mesh tool calls get permission-blocked.
+- Session resume (`-c`) + mesh = outbound-only. Don't rely on inbound `<channel>` tags in resumed sessions. This affects the aboyeur pattern which uses resume for continuity.
