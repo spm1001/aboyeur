@@ -1,9 +1,18 @@
 {
-  "name": "aboyeur",
+  "name": "sonnette",
   "version": "0.1.0",
-  "description": "Multi-session orchestrator — daemon, project managers, workers, and reflectors",
-  "author": { "name": "Sameer Modha", "url": "https://github.com/spm1001" },
+  "description": "Conductor mesh connectivity — peer-to-peer communication between Claude sessions",
+  "author": {
+    "name": "Sameer Modha",
+    "url": "https://github.com/spm1001"
+  },
   "repository": "https://github.com/spm1001/aboyeur",
   "license": "MIT",
-  "keywords": ["orchestration", "multi-session", "daemon"]
+  "keywords": ["mesh", "conductor", "peer", "channels"],
+  "mcpServers": {
+    "sonnette": {
+      "command": "node",
+      "args": ["${CLAUDE_PLUGIN_ROOT}/dist/conductor-channel.js"]
+    }
+  }
 }

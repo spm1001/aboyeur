@@ -96,7 +96,7 @@ CC sessions join the Anthropic conductor mesh (`bridge.claudeusercontent.com`) v
 
 **How it works:** `conductor-channel.ts` wraps `ConductorBridge` as an MCP Channels server. CC is started with `--dangerously-load-development-channels server:conductor-channel`. Incoming mesh messages arrive as `<channel source="conductor-channel">` tags. Claude sends via `send_message` MCP tool, discovers peers via `mesh_peers`.
 
-**Env vars:** `MESH_AGENT_ID` (required — stable mesh identity) and `MESH_ROLE` (aboyeur|pm|worker|user — affects interrupt semantics in instructions). If `MESH_AGENT_ID` is absent, the channel server exits silently (safe for subagent inheritance).
+**Env vars:** `MESH_AGENT_ID` (optional — explicit mesh identity override) and `MESH_ROLE` (aboyeur|pm|worker|user — affects interrupt semantics in instructions). When `MESH_AGENT_ID` is absent, auto-derived from the CC session's JSONL: `cc-{folder}-{first 8 chars of session UUID}`. This is stable across resume and unique per concurrent session. `MESH_DISABLED=1` suppresses mesh entirely (safe for subagent inheritance).
 
 **MCP registration required:** The channel server must be registered in MCP config for the `--dangerously-load-development-channels` flag to find it. Add to `.mcp.json` or `settings.json`:
 ```json
@@ -105,17 +105,17 @@ CC sessions join the Anthropic conductor mesh (`bridge.claudeusercontent.com`) v
 
 **spawnAgent() integration:** Pass `meshAgentId` and `meshRole` options — this adds the channel flag to args and sets env vars. Without these options, no mesh — Guéridon behaviour unchanged.
 
-**agentId scheme** (multiple Claudes per folder — folder alone is not unique enough):
+**agentId scheme** (auto-derived when `MESH_AGENT_ID` is not set):
 
-| Session type | Mesh agentId |
-|---|---|
-| Aboyeur | `cc-aboyeur` |
-| PM | `cc-pm-{outcome-id}` e.g. `cc-pm-aby-kikebu` |
-| Worker | `cc-worker-{action-id}-{seq}` e.g. `cc-worker-aby-sanimu-01` |
-| Reflector | `cc-reflector-{action-id}-{seq}` |
-| Guéridon interactive | `cc-{folder}` |
+| Session type | Mesh agentId | How assigned |
+|---|---|---|
+| Interactive (auto) | `cc-{folder}-{first8 of session UUID}` e.g. `cc-aboyeur-143b6b6d` | Derived from most recent JSONL in `~/.claude/projects/` |
+| PM (explicit) | `cc-pm-{outcome-id}` e.g. `cc-pm-aby-kikebu` | `MESH_AGENT_ID` env var |
+| Worker (explicit) | `cc-worker-{action-id}-{seq}` e.g. `cc-worker-aby-sanimu-01` | `MESH_AGENT_ID` env var |
+| Reflector (explicit) | `cc-reflector-{action-id}-{seq}` | `MESH_AGENT_ID` env var |
+| Spawned reviewer | `cc-reviewer-{timestamp}` | `MESH_AGENT_ID` env var |
 
-Stable IDs mean session restart re-registers the same agentId rather than appearing as a new stranger. `MESH_AGENT_ID` env var is how the spawner passes the computed ID to CC and then to the channel server.
+Auto-derived IDs are stable across resume (same JSONL → same UUID) and unique per concurrent session. Explicit `MESH_AGENT_ID` overrides auto-derivation for daemon-spawned sessions.
 
 **Peer removal:** `conductor_agent_offline`, `conductor_agent_expired`, and `conductor_agent_reset` are all handled — any of them removes the peer from the map. `conductor_agent_offline` is a no-op in the Office bundle (empty handler) but we handle it anyway for completeness.
 
