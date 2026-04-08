@@ -98,6 +98,9 @@ export class ConductorBridge extends EventEmitter<BridgeEvents> {
   private outboxTimer: ReturnType<typeof setInterval> | null = null;
   private reconnectDelay = RECONNECT_DELAY_MS;
   private connectedAt = 0;
+  /** Set after one recovery attempt — prevents the health check from flap-looping
+   *  with a dual-path sibling. Reset on successful registration (conductor_connected). */
+  private recoveryAttempted = false;
 
   constructor(opts: BridgeOptions) {
     super();
@@ -152,6 +155,28 @@ export class ConductorBridge extends EventEmitter<BridgeEvents> {
     if (this.closed) return;
     this.log("Connecting to conductor mesh...");
     await this.resolveAndConnect();
+  }
+
+  /** Reset after supersession yield — clears the closed flag and reconnects.
+   *  Called by the conductor-channel layer when it detects bridge death + stdin alive.
+   *  Returns false if recovery was already attempted (prevents flap loops between
+   *  dual-path processes that both have health checks running). */
+  async reconnect(): Promise<boolean> {
+    if (this.recoveryAttempted) {
+      this.log("Reconnect skipped — already attempted recovery (avoiding flap loop)");
+      return false;
+    }
+    this.log("Reconnect requested (bridge was closed, resetting)");
+    this.recoveryAttempted = true;
+    this.closed = false;
+    this.reconnectDelay = RECONNECT_DELAY_MS;
+    await this.resolveAndConnect();
+    return true;
+  }
+
+  /** True if the bridge yielded on supersession or was explicitly closed. */
+  get isClosed(): boolean {
+    return this.closed;
   }
 
   send(to: string, message: string): void {
@@ -300,7 +325,11 @@ export class ConductorBridge extends EventEmitter<BridgeEvents> {
       // CC restarts the MCP server process during interactive init — two processes
       // run briefly with the same identity. The old one must yield, not reconnect.
       // Without this check, both processes reconnect on supersession, creating a
-      // flap loop that runs 3-8 rounds until the old process's stdin closes.
+      // flap loop (both have open stdins, both try to reclaim the same agentId).
+      //
+      // Recovery from mid-session restarts (where WE are the surviving process) is
+      // handled at the conductor-channel layer, which can detect bridge death + stdin
+      // still open and call reconnect(). The bridge itself always yields on supersession.
       //
       // NB: We match on the reason string because close code 1001 is too generic
       // (also used for server restarts, where reconnection IS appropriate). If the
@@ -354,6 +383,9 @@ export class ConductorBridge extends EventEmitter<BridgeEvents> {
         // Don't reset backoff immediately — wait for stability.
         // If the server accepts then drops rapidly, premature reset causes 1s flap loops.
         this.connectedAt = Date.now();
+        // Clear recovery flag — if we connected successfully, future supersessions
+        // should get a fresh recovery attempt (e.g. another mid-session restart).
+        this.recoveryAttempted = false;
         this.emit("connected");
         break;
 
@@ -390,7 +422,7 @@ export class ConductorBridge extends EventEmitter<BridgeEvents> {
             this.emit("peer_offline", peerId, "deregister");
           }
         } else if (evt === "status" && peerId in this.peers) {
-          (this.peers[peerId] as any).file = payload.fileName ?? "";
+          this.peers[peerId].file = payload.fileName ?? "";
           this.writePeers();
         }
         break;
@@ -510,9 +542,9 @@ export class ConductorBridge extends EventEmitter<BridgeEvents> {
       const size = statSync(outboxPath).size;
       if (size <= this.outboxCursor) return;
 
-      const content = readFileSync(outboxPath, "utf-8");
-      const newContent = content.slice(this.outboxCursor);
-      this.outboxCursor = content.length;
+      const buf = readFileSync(outboxPath);
+      const newContent = buf.subarray(this.outboxCursor).toString("utf-8");
+      this.outboxCursor = buf.length;
 
       for (const line of newContent.split("\n")) {
         const trimmed = line.trim();

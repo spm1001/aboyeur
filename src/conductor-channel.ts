@@ -10,32 +10,35 @@
  *   - Outbound: CC calls send_message / mesh_peers MCP tools
  *
  * Env vars:
- *   MESH_AGENT_ID  — stable mesh identity, e.g. cc-aboyeur, cc-pm-aby-kikebu
- *                    Auto-generated from folder name (cc-{folder}) if not set.
+ *   MESH_AGENT_ID  — explicit mesh identity override, e.g. cc-pm-aby-kikebu.
+ *                    When unset, auto-derived from CC session: cc-{folder}-{first 8 of session UUID}.
+ *                    The session UUID comes from the most recent JSONL in ~/.claude/projects/{path}/.
+ *                    This is stable across resume (same JSONL) and unique per concurrent session.
  *   MESH_ROLE      — aboyeur | pm | worker | user (affects interrupt semantics)
  *   MESH_DISABLED  — set to "1" to suppress mesh (for subagents inheriting MCP config)
  *
- * Status files written to /tmp/conductor-bridge/{MESH_AGENT_ID}/ for statusline.sh.
+ * Status files written to /tmp/conductor-bridge/{agentId}/ for statusline.sh.
  *
  * Register in .mcp.json: { "mcpServers": { "conductor-channel": { "command": "node", "args": ["dist/conductor-channel.js"] } } }
  * Then: claude --dangerously-load-development-channels server:conductor-channel
  */
 
-import { basename } from "node:path";
+import { basename, join } from "node:path";
+import { homedir } from "node:os";
+import { readdirSync, statSync, writeFileSync, appendFileSync } from "node:fs";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { ListToolsRequestSchema, CallToolRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import { ConductorBridge } from "./conductor-bridge.js";
 
 // Diagnostic: dump env + MCP init info
-import { writeFileSync, appendFileSync } from "node:fs";
 try {
   const claudeVars = Object.entries(process.env)
     .filter(([k]) => k.startsWith("CLAUDE") || k.startsWith("MCP") || k.startsWith("MESH") || k === "CLAUDECODE")
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([k, v]) => `${k}=${v}`)
     .join("\n");
-  writeFileSync("/tmp/conductor-channel-env.txt", claudeVars + "\n");
+  writeFileSync(`/tmp/conductor-channel-env-${process.pid}.txt`, claudeVars + "\n");
 } catch { /* ignore */ }
 
 if (process.env.MESH_DISABLED === "1") {
@@ -43,7 +46,47 @@ if (process.env.MESH_DISABLED === "1") {
   process.exit(0);
 }
 
-const agentId = process.env.MESH_AGENT_ID || `cc-${basename(process.cwd())}`;
+/**
+ * Derive a stable, unique mesh identity from the CC session's JSONL file.
+ *
+ * CC writes session data to ~/.claude/projects/{encoded-path}/{session-uuid}.jsonl.
+ * The encoded path is the CWD with '/' replaced by '-'. The session UUID is stable
+ * across resume and unique per concurrent session.
+ *
+ * Returns cc-{folder}-{first8} when a session JSONL is found, cc-{folder} as fallback.
+ */
+function deriveAgentId(): string {
+  const folder = basename(process.cwd());
+  const base = `cc-${folder}`;
+
+  try {
+    const encodedPath = process.cwd().replace(/\//g, "-");
+    const projectDir = join(homedir(), ".claude", "projects", encodedPath);
+
+    // Find the most recently modified JSONL — that's our session.
+    // Race: two concurrent sessions may each pick the other's JSONL. The identities
+    // are still unique (different UUIDs), just potentially swapped. Cosmetic, not functional.
+    const entries = readdirSync(projectDir)
+      .filter((f) => f.endsWith(".jsonl"))
+      .map((f) => ({ name: f, mtime: statSync(join(projectDir, f)).mtimeMs }))
+      .sort((a, b) => b.mtime - a.mtime);
+
+    if (entries.length > 0) {
+      const sessionId = entries[0].name.replace(/\.jsonl$/, "");
+      const short = sessionId.slice(0, 8);
+      const derived = `${base}-${short}`;
+      appendFileSync(`/tmp/conductor-channel-env-${process.pid}.txt`,
+        `\n--- Agent ID ---\nDerived: ${derived} (from ${entries[0].name})\n`);
+      return derived;
+    }
+  } catch { /* fall through to bare folder name */ }
+
+  appendFileSync(`/tmp/conductor-channel-env-${process.pid}.txt`,
+    `\n--- Agent ID ---\nFallback: ${base} (no session JSONL found)\n`);
+  return base;
+}
+
+const agentId = process.env.MESH_AGENT_ID || deriveAgentId();
 const role = process.env.MESH_ROLE ?? "user";
 
 // --- Instructions injected into CC's system prompt ---
@@ -134,6 +177,16 @@ const bridge = new ConductorBridge({
   fileName: agentId,
 });
 
+// Push a channel notification to CC, swallowing errors if stdin is already closing.
+async function notify(content: string, meta: Record<string, unknown>) {
+  try {
+    await mcp.notification({
+      method: "notifications/claude/channel",
+      params: { content, meta },
+    });
+  } catch { /* CC may have closed stdin — safe to ignore */ }
+}
+
 // Incoming mesh message → push as channel notification to CC.
 // The bridge already deduplicates replays — we only see genuinely new messages.
 //
@@ -141,34 +194,16 @@ const bridge = new ConductorBridge({
 // If CC doesn't surface these as <channel> tags, this is the first place to check.
 // The Channels API is a research preview (CC v2.1.80+) — the shape may change.
 bridge.on("message", async (from, message) => {
-  await mcp.notification({
-    method: "notifications/claude/channel",
-    params: {
-      content: message,
-      meta: { from },
-    },
-  });
+  await notify(message, { from });
 });
 
 // Peer joins/leaves → push as channel notification so CC sees mesh changes.
 bridge.on("peer_online", async (peerId, info) => {
-  await mcp.notification({
-    method: "notifications/claude/channel",
-    params: {
-      content: `Peer online: ${peerId} (${info.label}, ${info.app})`,
-      meta: { event: "peer_online", peerId },
-    },
-  });
+  await notify(`Peer online: ${peerId} (${info.label}, ${info.app})`, { event: "peer_online", peerId });
 });
 
 bridge.on("peer_offline", async (peerId, reason) => {
-  await mcp.notification({
-    method: "notifications/claude/channel",
-    params: {
-      content: `Peer offline: ${peerId} (${reason})`,
-      meta: { event: "peer_offline", peerId, reason },
-    },
-  });
+  await notify(`Peer offline: ${peerId} (${reason})`, { event: "peer_offline", peerId, reason });
 });
 
 // On successful connection: push a peer summary (replay filtering).
@@ -182,13 +217,7 @@ bridge.on("connected", async () => {
     const lines = Object.entries(peers).map(
       ([id, info]) => `${id} — ${info.label}`,
     );
-    await mcp.notification({
-      method: "notifications/claude/channel",
-      params: {
-        content: `Mesh connected. ${count} peer(s) online:\n${lines.join("\n")}`,
-        meta: { event: "connected" },
-      },
-    });
+    await notify(`Mesh connected. ${count} peer(s) online:\n${lines.join("\n")}`, { event: "connected" });
   }
 });
 
@@ -204,20 +233,44 @@ await mcp.connect(new StdioServerTransport());
 try {
   const clientVersion = mcp.getClientVersion();
   const clientCaps = mcp.getClientCapabilities();
-  appendFileSync("/tmp/conductor-channel-env.txt",
+  appendFileSync(`/tmp/conductor-channel-env-${process.pid}.txt`,
     `\n--- MCP clientInfo ---\n${JSON.stringify(clientVersion, null, 2)}\n` +
     `\n--- MCP clientCapabilities ---\n${JSON.stringify(clientCaps, null, 2)}\n`);
 } catch { /* ignore */ }
 
 await bridge.connect();
 
+// --- Bridge health recovery ---
+// The bridge yields permanently on supersession (prevents flap loops between
+// dual-path processes). But CC sometimes restarts the MCP server mid-session:
+// the new process supersedes us, then CC kills the new process. We're the
+// survivor with a dead bridge.
+//
+// Recovery: poll bridge health. If it's closed but our stdin is still open,
+// we're the process CC kept — reconnect.
+const HEALTH_CHECK_MS = 10_000;
+let stdinClosed = false;
+
+const healthCheck = setInterval(() => {
+  if (stdinClosed) {
+    clearInterval(healthCheck);
+    return;
+  }
+  if (bridge.isClosed) {
+    bridge.reconnect().catch(() => {});
+  }
+}, HEALTH_CHECK_MS);
+
 // Clean shutdown: when CC exits it closes stdin → deregister + close WebSocket.
 process.stdin.on("end", () => {
+  stdinClosed = true;
+  clearInterval(healthCheck);
   bridge.close();
   process.exit(0);
 });
 
 process.on("SIGTERM", () => {
+  clearInterval(healthCheck);
   bridge.close();
   process.exit(0);
 });
