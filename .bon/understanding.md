@@ -141,3 +141,7 @@ Patterns from Gastown that still transfer:
 - In `-p` mode, MCP servers are NOT auto-discovered from `.mcp.json`. Must use `--mcp-config` explicitly or have the server in the project's `.mcp.json`.
 - `--allowed-tools` must include `mcp__conductor-channel__*` explicitly for `-p` mode peers, or mesh tool calls get permission-blocked.
 - Session resume (`-c`) + mesh = outbound-only. Don't rely on inbound `<channel>` tags in resumed sessions. This affects the aboyeur pattern which uses resume for continuity.
+
+## Portfolio status (2026-06-09 audit)
+
+Split verdict from Sameer: the Channels system (Claude-to-Claude mesh) is "chef's kiss" — keep; the autonomous daemon is Someday/Maybe (aby-ratobi/volube waiting) — réceptionnaire took the Gmail-trigger job (aby-sanimu closed as superseded). Natural next action if picked up: finish sonnette plugin packaging (aby-zufefu — plugin.json exists, absent from marketplaces). The 8-phase Bun migration (aby-cusoru) is unstarted and optional. Reshape context: bds-hifusu.
