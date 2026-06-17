@@ -145,3 +145,22 @@ Patterns from Gastown that still transfer:
 ## Portfolio status (2026-06-09 audit)
 
 Split verdict from Sameer: the Channels system (Claude-to-Claude mesh) is "chef's kiss" — keep; the autonomous daemon is Someday/Maybe (aby-ratobi/volube waiting) — réceptionnaire took the Gmail-trigger job (aby-sanimu closed as superseded). Natural next action if picked up: finish sonnette plugin packaging (aby-zufefu — plugin.json exists, absent from marketplaces). The 8-phase Bun migration (aby-cusoru) is unstarted and optional. Reshape context: bds-hifusu.
+
+## Enmeshed by default — the sonnette → batterie push (2026-06-17)
+
+Goal (Sameer): every *interactive* CC session enmeshed by default — see and talk to each other bidirectionally, no per-session dev flag, no approval dialog. Office/Cowork peers welcome but not the priority.
+
+Proven live this session (CC 2.1.179, two CC sessions on hezza):
+- **Bidirectional CC↔CC works.** Round-trip confirmed both directions via `<channel>` tags. The mesh *capability* is not in question — this push is distribution, not architecture.
+- **The room is account-keyed, no coordination needed.** `conductor-bridge.ts:264-270` derives the room from `account.uuid` (via `/api/oauth/profile`), so every session on Sameer's account auto-shares one `/v2/conductor/{account-uuid}` room. CC↔CC is free; CC↔Office differs (Office uses per-conversation `/v2/conductor/{conversationId}` + cross-surface `/office/{userId}`). Cross-*user* mesh would need a non-account room key — out of scope.
+
+Hard-won constraints (these shape every outcome below):
+- **The channel binds only at FRESH session birth.** A `claude -c` resume cannot be retrofitted onto the mesh — it reuses the MCP-config snapshot from when the session was created. So "by default" means every *new* session is born with the plugin; an already-running conversation cannot be enmeshed. (The docs-agent's "resume inbound fixed June 2026" claim was empirically FALSE for retrofitting.)
+- **OPEN, MUST TEST:** does a session *born with* the channel retain inbound `<channel>` delivery across a later resume? Untested. Gates the bg/resumed-heavy workflow — if inbound dies on resume, "enmeshed by default" only half-holds for resumed sessions. Test before declaring victory.
+- **MCP servers are NOT configured via `settings.json`.** Editing `settings.json` `mcpServers` is inert (verified 2026-06-17 — a fresh session reports "no MCP server configured with that name"). Real registration: `.mcp.json` (project), `~/.claude.json` (user, via `claude mcp add`), or a **plugin**. Plugins make a server global by construction — proof: `plugin:mise:mise` is in every session/cwd. **The plugin is the correct vehicle for "global everywhere."**
+- **Team approval drops the flag AND the dialog:** `policySettings.allowedChannelPlugins: ["plugin:sonnette@batterie"]` in `/etc/claude-code/managed-settings.json` (machine-level; Sameer self-owns it on hezza + Mac). Honoured on Team/Enterprise; Max NOT supported (open feature request).
+- **Plugin requirements already met:** plugin.json declares `mcpServers` (✓) and the server declares the `claude/channel` capability (✓ `conductor-channel.ts:122`, under `experimental`).
+- **Build-step is a vendoring blocker → aby-cusoru is a PREREQUISITE, not optional.** sonnette's plugin.json points at `dist/conductor-channel.js`; batterie's `assemble.sh` vendors *clean clones* and `dist/` is gitignored — so the shipped plugin would point at a missing file. The Bun-run-from-`src` migration (aby-cusoru) removes the build step and is the clean fix. (Supersedes the 2026-06-09 "optional" note.) Fallbacks if Bun stalls: commit `dist/`, or a postinstall build.
+- **batterie is assembled, never hand-edited.** Adding sonnette = wire `aboyeur` into `assemble.sh`'s PLUGINS map + `marketplace.json`, respecting the manifest-invariant and version-ratchet guards (batterie/CLAUDE.md). Marketplace name is **`batterie`** (the assembled artifact repo), not `batterie-de-savoir` — correct aby-zufefu's stale done-criterion.
+
+Scope: Cowork (phone) / Office surfaces ride the separate `/office/{userId}` channel — parked, "welcome later" (a second connection, not a config flip). Not building cross-user mesh.
