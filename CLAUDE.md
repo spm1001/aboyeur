@@ -96,7 +96,7 @@ CC sessions join the Anthropic conductor mesh (`bridge.claudeusercontent.com`) v
 
 **How it works:** `conductor-channel.ts` wraps `ConductorBridge` as an MCP Channels server. CC is started with `--dangerously-load-development-channels server:conductor-channel`. Incoming mesh messages arrive as `<channel source="conductor-channel">` tags. Claude sends via `send_message` MCP tool, discovers peers via `mesh_peers`.
 
-**Env vars:** `MESH_AGENT_ID` (optional — explicit mesh identity override) and `MESH_ROLE` (aboyeur|pm|worker|user — affects interrupt semantics in instructions). When `MESH_AGENT_ID` is absent, auto-derived from the CC session's JSONL: `cc-{folder}-{first 8 chars of session UUID}`. This is stable across resume and unique per concurrent session. `MESH_DISABLED=1` suppresses mesh entirely (safe for subagent inheritance).
+**Env vars:** `MESH_AGENT_ID` (optional — explicit mesh identity override) and `MESH_ROLE` (aboyeur|pm|worker|user — affects interrupt semantics in instructions). When `MESH_AGENT_ID` is absent, auto-derived from the CC session's JSONL: `cc-{folder}-{first 8 chars of session UUID}`. Stable across resume. **NOT reliably unique for two sessions in the SAME cwd** — the derivation reads the *most recently modified* JSONL in the project dir, so a newcomer can adopt a busy sibling's UUID and collide (measured 2026-07-14: 114 supersession events, both sessions knocked offline — aby-pupaso). Set `MESH_AGENT_ID` explicitly when running two sessions in one repo. `MESH_DISABLED=1` suppresses mesh entirely (safe for subagent inheritance).
 
 **MCP registration required:** The channel server must be registered in MCP config for the `--dangerously-load-development-channels` flag to find it. Add to `.mcp.json` or `settings.json`:
 ```json
@@ -115,7 +115,7 @@ CC sessions join the Anthropic conductor mesh (`bridge.claudeusercontent.com`) v
 | Reflector (explicit) | `cc-reflector-{action-id}-{seq}` | `MESH_AGENT_ID` env var |
 | Spawned reviewer | `cc-reviewer-{timestamp}` | `MESH_AGENT_ID` env var |
 
-Auto-derived IDs are stable across resume (same JSONL → same UUID) and unique per concurrent session. Explicit `MESH_AGENT_ID` overrides auto-derivation for daemon-spawned sessions.
+Auto-derived IDs are stable across resume (same JSONL → same UUID). They are **NOT** collision-free for two sessions in the same cwd (the derivation reads the busiest JSONL in the project dir — aby-pupaso). Explicit `MESH_AGENT_ID` overrides auto-derivation for daemon-spawned sessions and is the fix for same-repo concurrency.
 
 **Peer removal:** `conductor_agent_offline`, `conductor_agent_expired`, and `conductor_agent_reset` are all handled — any of them removes the peer from the map. `conductor_agent_offline` is a no-op in the Office bundle (empty handler) but we handle it anyway for completeness.
 
