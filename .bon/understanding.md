@@ -78,6 +78,18 @@ env -u CLAUDECODE -u CLAUDE_CODE_ENTRYPOINT \
     "{PROMPT}"
 ```
 
+## Mesh Delivery Semantics — SETTLED (2026-06-17 aby-lizazu + 2026-07-14 aby-nevejo)
+
+The mesh is a **synchronous presence fabric, not a message queue.** Complete picture, all measured:
+
+- **To a live peer: lossless and order-preserving** (n=1, K=8, 06-17 hezza test). Receive-side coalescing observed (7 of 8 in one wake, order intact) — hypothesis, not measurement.
+- **To an absent peer — never-registered, cleanly-departed, or crashed: synchronous rejection.** The server answers `conductor_error: "Agent not found: <id>"` within ~25ms of every send. Measured 07-14 on tube with a deterministic harness (`/tmp/mesh-harness.mjs` pattern — ConductorBridge driven directly, positive control passed first): never-registered (Test A), clean-exit-then-send (B1), SIGKILL-equivalent unclean death then send seconds later (B2) — all identical. **There is no store-and-forward.** Server-side "replay" (`events_replayed` on connect) is roster catch-up only — it replays peer connect/disconnect events, never messages.
+- **Our client swallows the rejection.** `bridge.send()` returns void; the `send_message` tool mints `"sent to <peer>"` unconditionally (conductor-channel.ts:155-158) while the error is already sitting in events.jsonl. The bridge *does* emit the `error` event — it's just not wired into the tool result. Fix filed (aby-wozuvi). Note for the fix: `conductor_error` carries **no correlation id** — attribute by serial-send + short error-race window (~200ms).
+- **Roster is eventually-consistent; routing is instant truth.** A fresh peer registering 4s after a crash still received a roster event announcing the dead agent as connected, while sends to it bounced. `mesh_peers` can show dead peers for the expiry window (60–120s); the only reachability test is a send + watching for the synchronous error. This half-revises the old "peer list is trustworthy" lesson (see Operational Lessons).
+- **Design consequence (the rinisa input, one sentence):** wake for a not-running Claude cannot ride the mesh — it needs a spawner (gueridon/daemon) or durable state read at birth (bons) — and Tend's doorbell-not-payload becomes near-mandatory: durable content in bons/files, the mesh carrying only live-peer nudges, with the synchronous error as the trigger to fall back to durable coordination.
+- **Watch (minor):** one harness run showed the first of three arrivals present at transport (events.jsonl) but missing from the client's stdout `message`-event trace — transport is the instrument of record; don't build on emission logs until this is understood.
+- **The sound test method** (keep using it): two independent per-end tallies — fixed run-nonce + seq per *actual* send, receiver reports every `(nonce, seq)` in arrival order, diff the sets. A send-ack is a claim; only the cross-end diff is a measurement.
+
 ## The Four Transport Mechanisms
 
 | Transport | Speed | Reach | Works in -p | Status |
@@ -123,7 +135,7 @@ Patterns from Gastown that still transfer:
 
 ## Operational Lessons
 
-**The mesh peer list is trustworthy.** If an agent appears, it has a live WebSocket. Stale entries = zombie bridge processes from inadequate cleanup, not server bugs.
+**The mesh peer list is trustworthy about the recent past, not the present.** (Revised 2026-07-14, aby-nevejo.) An agent in the list had a live WebSocket at some recent point — but the roster is eventually-consistent: a crashed peer can appear in `mesh_peers` (and in fresh peers' roster sync) for the 60–120s expiry window while every send to it bounces `Agent not found`. Routing evicts on socket close, instantly. Reachability = send and watch for the synchronous error, never the list.
 
 **events.jsonl is the primary debugging tool.** Start by examining traces, not theorising.
 
@@ -145,6 +157,15 @@ Patterns from Gastown that still transfer:
 ## Portfolio status (2026-06-09 audit)
 
 Split verdict from Sameer: the Channels system (Claude-to-Claude mesh) is "chef's kiss" — keep; the autonomous daemon is Someday/Maybe (aby-ratobi/volube waiting) — réceptionnaire took the Gmail-trigger job (aby-sanimu closed as superseded). Natural next action if picked up: finish sonnette plugin packaging (aby-zufefu — plugin.json exists, absent from marketplaces). The 8-phase Bun migration (aby-cusoru) is unstarted and optional. Reshape context: bds-hifusu.
+
+## Tube is home now (2026-07-14)
+
+Hezza is being turned off — tube is aboyeur's new home, per Sameer. State as verified this session:
+
+- **Mesh boots from tube.** `npm install` + `tsc` built `dist/` on the tube clone; a throwaway `-p` peer with the dev channels flag registered, called `mesh_peers` cleanly (zero peers — alone on the mesh, as expected). The org-level Channels gate is open from tube. `/peer-review` is genuinely available here for any session started with the flag.
+- **Tube's node is v20.19.2** — no native TS type-stripping (needs 22.6+), no built-in WebSocket (needs 22+). So the no-build hot path still means bun, and **bun is not installed on tube** — aby-cusoru's Phase 0 needs re-doing here. src/ has no enums/namespaces (fully erasable TS), so bun-compat is clean.
+- **aby-cusoru's briefs are hezza-worded** ("24h of hezza use", hezza paths) — re-ground them to tube when picking it up. Oddity on the board: Phase 7 (the soak) is marked done while Phases 1–6 are open.
+- "Allowlisted" disambiguation: the **org-level** Teams Channels enablement is on (proven by the bridge working). The **machine-level** `allowedChannelPlugins` allowlist does not exist yet anywhere — that's aby-lesefu, gated on sonnette (aby-zufefu), gated on cusoru.
 
 ## Enmeshed by default — the sonnette → batterie push (2026-06-17)
 
