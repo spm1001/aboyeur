@@ -11,9 +11,11 @@
  *
  * Env vars:
  *   MESH_AGENT_ID  — explicit mesh identity override, e.g. cc-pm-aby-kikebu.
- *                    When unset, auto-derived from CC session: cc-{folder}-{first 8 of session UUID}.
- *                    The session UUID comes from the most recent JSONL in ~/.claude/projects/{path}/.
- *                    This is stable across resume (same JSONL) and unique per concurrent session.
+ *                    When unset, auto-derived: cc-{folder}-{first 8 of session UUID}.
+ *                    The session UUID is read from CLAUDE_CODE_SESSION_ID (CC sets it at
+ *                    MCP-spawn time) — race-free and stable across resume, so two sessions
+ *                    in one cwd get distinct ids (fixes aby-pupaso). Falls back to a
+ *                    most-recent-JSONL scan only if that env var is absent (older CC).
  *   MESH_ROLE      — aboyeur | pm | worker | user (affects interrupt semantics)
  *   MESH_DISABLED  — set to "1" to suppress mesh (for subagents inheriting MCP config)
  *
@@ -59,13 +61,26 @@ function deriveAgentId(): string {
   const folder = basename(process.cwd());
   const base = `cc-${folder}`;
 
+  // Preferred: CC passes the session's OWN uuid via CLAUDE_CODE_SESSION_ID at
+  // MCP-spawn time (verified 2026-07-15, aby-pupaso). This is race-free — each
+  // session has a distinct uuid — and stable across resume (same session = same
+  // uuid), so two sessions in one cwd no longer collide as they did with the
+  // JSONL-scan fallback below.
+  const ownSessionId = process.env.CLAUDE_CODE_SESSION_ID;
+  if (ownSessionId) {
+    const derived = `${base}-${ownSessionId.slice(0, 8)}`;
+    appendFileSync(`/tmp/conductor-channel-env-${process.pid}.txt`,
+      `\n--- Agent ID ---\nDerived: ${derived} (from CLAUDE_CODE_SESSION_ID)\n`);
+    return derived;
+  }
+
   try {
+    // Fallback (older CC without CLAUDE_CODE_SESSION_ID): most-recently-modified
+    // JSONL in the project dir. NOT collision-free for two sessions in one cwd
+    // (aby-pupaso) — retained only so nothing regresses when the env var is absent.
     const encodedPath = process.cwd().replace(/\//g, "-");
     const projectDir = join(homedir(), ".claude", "projects", encodedPath);
 
-    // Find the most recently modified JSONL — that's our session.
-    // Race: two concurrent sessions may each pick the other's JSONL. The identities
-    // are still unique (different UUIDs), just potentially swapped. Cosmetic, not functional.
     const entries = readdirSync(projectDir)
       .filter((f) => f.endsWith(".jsonl"))
       .map((f) => ({ name: f, mtime: statSync(join(projectDir, f)).mtimeMs }))
@@ -76,7 +91,7 @@ function deriveAgentId(): string {
       const short = sessionId.slice(0, 8);
       const derived = `${base}-${short}`;
       appendFileSync(`/tmp/conductor-channel-env-${process.pid}.txt`,
-        `\n--- Agent ID ---\nDerived: ${derived} (from ${entries[0].name})\n`);
+        `\n--- Agent ID ---\nDerived: ${derived} (from ${entries[0].name}, JSONL-scan fallback)\n`);
       return derived;
     }
   } catch { /* fall through to bare folder name */ }
