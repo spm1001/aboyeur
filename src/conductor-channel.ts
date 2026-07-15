@@ -32,6 +32,7 @@ import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { ListToolsRequestSchema, CallToolRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import { ConductorBridge } from "./conductor-bridge.js";
+import { meshAgentId } from "./mesh-id.js";
 
 // Diagnostic: dump env + MCP init info
 try {
@@ -49,13 +50,10 @@ if (process.env.MESH_DISABLED === "1") {
 }
 
 /**
- * Derive a stable, unique mesh identity from the CC session's JSONL file.
- *
- * CC writes session data to ~/.claude/projects/{encoded-path}/{session-uuid}.jsonl.
- * The encoded path is the CWD with '/' replaced by '-'. The session UUID is stable
- * across resume and unique per concurrent session.
- *
- * Returns cc-{folder}-{first8} when a session JSONL is found, cc-{folder} as fallback.
+ * Derive this session's mesh identity: cc-{folder}-{first8 of session uuid}.
+ * Preferred source is CLAUDE_CODE_SESSION_ID (race-free, resume-stable, distinct
+ * per concurrent session); falls back to a most-recent-JSONL scan for older CC
+ * (NOT collision-free — aby-pupaso), then bare cc-{folder}.
  */
 function deriveAgentId(): string {
   const folder = basename(process.cwd());
@@ -68,7 +66,7 @@ function deriveAgentId(): string {
   // JSONL-scan fallback below.
   const ownSessionId = process.env.CLAUDE_CODE_SESSION_ID;
   if (ownSessionId) {
-    const derived = `${base}-${ownSessionId.slice(0, 8)}`;
+    const derived = meshAgentId(folder, ownSessionId);
     appendFileSync(`/tmp/conductor-channel-env-${process.pid}.txt`,
       `\n--- Agent ID ---\nDerived: ${derived} (from CLAUDE_CODE_SESSION_ID)\n`);
     return derived;
@@ -88,8 +86,7 @@ function deriveAgentId(): string {
 
     if (entries.length > 0) {
       const sessionId = entries[0].name.replace(/\.jsonl$/, "");
-      const short = sessionId.slice(0, 8);
-      const derived = `${base}-${short}`;
+      const derived = meshAgentId(folder, sessionId);
       appendFileSync(`/tmp/conductor-channel-env-${process.pid}.txt`,
         `\n--- Agent ID ---\nDerived: ${derived} (from ${entries[0].name}, JSONL-scan fallback)\n`);
       return derived;
