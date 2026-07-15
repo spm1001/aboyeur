@@ -98,10 +98,11 @@ CC sessions join the Anthropic conductor mesh (`bridge.claudeusercontent.com`) v
 
 **Env vars:** `MESH_AGENT_ID` (optional — explicit mesh identity override) and `MESH_ROLE` (aboyeur|pm|worker|user — affects interrupt semantics in instructions). When `MESH_AGENT_ID` is absent, auto-derived as `cc-{folder}-{first 8 chars of session UUID}`, where the UUID is read from `CLAUDE_CODE_SESSION_ID` (CC sets it at MCP-spawn time). This is race-free and stable across resume, so two sessions in the SAME cwd get **distinct** ids (fixed 2026-07-15, aby-pupaso). *History:* the UUID used to be read from the most-recently-modified JSONL in the project dir, which let a newcomer adopt a busy sibling's UUID and collide — measured 2026-07-14 as 114 supersession events, both sessions knocked offline. Falls back to that JSONL scan only if `CLAUDE_CODE_SESSION_ID` is absent (older CC). `MESH_DISABLED=1` suppresses mesh entirely (safe for subagent inheritance).
 
-**MCP registration required:** The channel server must be registered in MCP config for the `--dangerously-load-development-channels` flag to find it. Add to `.mcp.json` or `settings.json`:
+**MCP registration required:** The channel server must be registered in MCP config for the `--dangerously-load-development-channels` flag to find it. `.mcp.json` (canonical) or `settings.json`:
 ```json
-{ "mcpServers": { "conductor-channel": { "command": "node", "args": ["dist/conductor-channel.js"] } } }
+{ "mcpServers": { "conductor-channel": { "command": "bun", "args": ["src/conductor-channel.ts"] } } }
 ```
+Bun runs the TypeScript directly — no build step (Phase 3, aby-bosuwa, 2026-07-15). `bun` must be on the CC process's PATH or the MCP server ENOENTs silently (MCP fails soft); on tube via a `~/.local/bin/bun` symlink.
 
 **spawnAgent() integration:** Pass `meshAgentId` and `meshRole` options — this adds the channel flag to args and sets env vars. Without these options, no mesh — Guéridon behaviour unchanged.
 
