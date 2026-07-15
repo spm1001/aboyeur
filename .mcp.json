@@ -1,8 +1,8 @@
 {
   "mcpServers": {
     "conductor-channel": {
-      "command": "node",
-      "args": ["dist/conductor-channel.js"]
+      "command": "bun",
+      "args": ["src/conductor-channel.ts"]
     }
   }
 }

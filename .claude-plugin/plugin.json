@@ -11,8 +11,8 @@
   "keywords": ["mesh", "conductor", "peer", "channels"],
   "mcpServers": {
     "sonnette": {
-      "command": "node",
-      "args": ["${CLAUDE_PLUGIN_ROOT}/dist/conductor-channel.js"]
+      "command": "bun",
+      "args": ["${CLAUDE_PLUGIN_ROOT}/src/conductor-channel.ts"]
     }
   }
 }
