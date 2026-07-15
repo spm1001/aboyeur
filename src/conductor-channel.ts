@@ -145,7 +145,11 @@ mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
   tools: [
     {
       name: "send_message",
-      description: "Send a message to a peer on the conductor mesh",
+      description:
+        "Send a message to a peer on the conductor mesh. Returns 'delivered' only if the " +
+        "server accepted it (no rejection within ~200ms); returns 'NOT delivered' with the " +
+        "reason if the peer is absent/gone (the mesh has no store-and-forward). 'delivered' " +
+        "means the server accepted the send, not an end-to-end receipt.",
       inputSchema: {
         type: "object" as const,
         properties: {
@@ -166,8 +170,13 @@ mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
 mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
   if (req.params.name === "send_message") {
     const { to, message } = req.params.arguments as { to: string; message: string };
-    bridge.send(to, message);
-    return { content: [{ type: "text", text: `sent to ${to}` }] };
+    // Report delivery TRUTH, not a mint: the mesh rejects absent/ghost peers
+    // synchronously (aby-nevejo), so race that error before answering (aby-nowabu).
+    const res = await bridge.sendAndConfirm(to, message);
+    if (res.ok) {
+      return { content: [{ type: "text", text: `delivered to ${to} (server accepted — not an end-to-end receipt)` }] };
+    }
+    return { content: [{ type: "text", text: `NOT delivered to ${to}: ${res.error}` }], isError: true };
   }
   if (req.params.name === "mesh_peers") {
     const peers = bridge.getPeers();

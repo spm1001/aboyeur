@@ -195,6 +195,51 @@ export class ConductorBridge extends EventEmitter<BridgeEvents> {
     this.log(`SENT to ${to}: ${message.slice(0, 100)}`);
   }
 
+  /**
+   * Send, then race a bounded window against the server's `conductor_error`.
+   *
+   * The mesh has NO store-and-forward: a send to an absent/ghost peer is rejected
+   * synchronously with `conductor_error: "Agent not found"` in ~25ms (aby-nevejo).
+   * But `conductor_error` carries NO correlation id, so we attribute by
+   * CONSTRUCTION: the send_message MCP tool sends SERIALLY (one call at a time),
+   * so any `error` arriving inside the window belongs to this send. A ~200ms
+   * window catches the ~25ms rejection with margin.
+   *
+   * `{ok:true}` means "the server accepted the send to the socket" — NOT an
+   * end-to-end receipt; a live peer could still drop it. `{ok:false}` means the
+   * send was rejected (ghost peer) or we were never connected.
+   *
+   * Listener hygiene: the one-shot `error` listener is removed on timeout so
+   * successful sends don't leak listeners; on error it auto-removes (`once`).
+   */
+  sendAndConfirm(
+    to: string,
+    message: string,
+    windowMs = 200,
+  ): Promise<{ ok: boolean; error?: string }> {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+      return Promise.resolve({ ok: false, error: "not connected to mesh" });
+    }
+    return new Promise((resolve) => {
+      let settled = false;
+      let timer: ReturnType<typeof setTimeout>;
+      const onError = (err: unknown) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        resolve({ ok: false, error: String(err) });
+      };
+      this.once("error", onError);
+      timer = setTimeout(() => {
+        if (settled) return;
+        settled = true;
+        this.removeListener("error", onError);
+        resolve({ ok: true });
+      }, windowMs);
+      this.send(to, message);
+    });
+  }
+
   getPeers(): Record<string, PeerInfo> {
     return { ...this.peers };
   }
