@@ -15,8 +15,6 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.27.1",
-    "@types/ws": "^8.18.1",
-    "better-sqlite3": "^12.6.2",
-    "ws": "^8.19.0"
+    "better-sqlite3": "^12.6.2"
   }
 }

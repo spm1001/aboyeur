@@ -2,9 +2,13 @@
  * conductor-bridge.ts — Connect a CC agent to Anthropic's conductor mesh.
  *
  * Maintains a persistent WebSocket connection to bridge.claudeusercontent.com.
- * Uses Node.js `ws` library — MUST be Node, not Python. The conductor mesh
- * server rejects Python WebSocket clients with "Stale connection (no pong)"
- * after 60 seconds. Node.js `ws` works perfectly (proven 15 Mar 2026).
+ * Uses the runtime's built-in WHATWG `WebSocket` (bun's global; also Node 22+) —
+ * MUST NOT be Python. The conductor mesh server rejects Python WebSocket clients
+ * with "Stale connection (no pong)" after 60 seconds. The built-in client works
+ * perfectly (ws-library era proven 15 Mar 2026; ws dropped for the built-in
+ * WebSocket 15 Jul 2026, aby-giwohi — the mesh runs under bun, no ws dep).
+ * NB: WHATWG WebSocket is addEventListener-based (no `.on()`); the close event is
+ * a CloseEvent{code, reason:string}, not (code, reason:Buffer).
  *
  * File-based IPC (same protocol as the Python bridge it replaces):
  *   {bridgeDir}/inbox.jsonl   — incoming messages (append-only)
@@ -25,7 +29,7 @@
  *   bridge.close();
  */
 
-import WebSocket from "ws";
+// WebSocket is the runtime's built-in WHATWG global (bun; Node 22+) — no `ws` import.
 import { readFileSync, writeFileSync, appendFileSync, mkdirSync, existsSync, statSync } from "node:fs";
 import { execSync } from "node:child_process";
 import { join } from "node:path";
@@ -322,7 +326,7 @@ export class ConductorBridge extends EventEmitter<BridgeEvents> {
     const ws = new WebSocket(wsUrl);
     this.ws = ws;
 
-    ws.on("open", () => {
+    ws.addEventListener("open", () => {
       // Register
       const reg = {
         type: "register",
@@ -348,10 +352,11 @@ export class ConductorBridge extends EventEmitter<BridgeEvents> {
       this.startTimers(ws);
     });
 
-    ws.on("message", (data: WebSocket.Data) => {
+    ws.addEventListener("message", (event) => {
+      // WHATWG: text frames arrive as event.data already a string (no Buffer.toString()).
       let msg: any;
       try {
-        msg = JSON.parse(data.toString());
+        msg = JSON.parse(event.data);
       } catch {
         return;
       }
@@ -359,8 +364,12 @@ export class ConductorBridge extends EventEmitter<BridgeEvents> {
       this.handleMessage(msg);
     });
 
-    ws.on("close", (code: number, reason: Buffer) => {
-      const reasonStr = reason.toString();
+    ws.addEventListener("close", (event) => {
+      // WHATWG CloseEvent: ONE arg carrying code:number + reason:string (not the
+      // `ws` library's two args with a Buffer reason). The supersession yield below
+      // hinges on `reasonStr === "Superseded by new connection"` — keep it exact.
+      const code = event.code;
+      const reasonStr = event.reason;
       this.log(`WS closed: code=${code} reason='${reasonStr}'`);
       this.stopTimers();
       this.writeStatus("disconnected");
@@ -413,8 +422,13 @@ export class ConductorBridge extends EventEmitter<BridgeEvents> {
       }
     });
 
-    ws.on("error", (err: Error) => {
-      this.log(`WS error: ${err.message}`);
+    ws.addEventListener("error", (event) => {
+      // WHATWG error event is a bare Event (not an Error) — no reliable .message.
+      // Some runtimes deliver an ErrorEvent with .message; read it defensively and
+      // fall back to the event type. Logging only; the close that follows carries
+      // code+reason.
+      const detail = (event as { message?: string }).message ?? event.type;
+      this.log(`WS error: ${detail}`);
     });
   }
 
