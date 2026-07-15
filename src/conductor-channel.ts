@@ -21,8 +21,9 @@
  *
  * Status files written to /tmp/conductor-bridge/{agentId}/ for statusline.sh.
  *
- * Register in .mcp.json: { "mcpServers": { "conductor-channel": { "command": "node", "args": ["dist/conductor-channel.js"] } } }
+ * Register in .mcp.json: { "mcpServers": { "conductor-channel": { "command": "bun", "args": ["src/conductor-channel.ts"] } } }
  * Then: claude --dangerously-load-development-channels server:conductor-channel
+ * (bun runs the .ts directly — no build step; Phase 3/aby-bosuwa.)
  */
 
 import { basename, join } from "node:path";
@@ -250,6 +251,31 @@ bridge.on("error", (err) => {
 
 await mcp.connect(new StdioServerTransport());
 
+const HEALTH_CHECK_MS = 10_000;
+let stdinClosed = false;
+let healthCheck: ReturnType<typeof setInterval> | null = null;
+
+// Clean shutdown: when CC exits it closes our stdin (EOF) → deregister + close WS.
+// Registered HERE — right after mcp.connect() (stdin is now flowing, read by the
+// StdioServerTransport) and BEFORE the network-bound bridge.connect() below — so an
+// EOF arriving during connect is not missed. Attaching it after bridge.connect (as
+// it was) lost that race and leaked a hung process holding a mesh connection when CC
+// spawned the channel then disconnected quickly (early-EOF hang, reproduced under
+// BOTH bun and node — node's faster startup merely masked it; aby-pizufo 2026-07-15).
+const shutdown = () => {
+  if (stdinClosed) return;
+  stdinClosed = true;
+  if (healthCheck) clearInterval(healthCheck);
+  bridge.close();
+  process.exit(0);
+};
+process.stdin.on("end", shutdown);
+process.stdin.on("close", shutdown);
+process.on("SIGTERM", shutdown);
+// Guard the already-ended case: an EOF that landed before the listeners above
+// (stdin closed at spawn — CC never really connected) fires no future event.
+if (process.stdin.readableEnded) shutdown();
+
 // Diagnostic: capture MCP client info (looking for session ID)
 try {
   const clientVersion = mcp.getClientVersion();
@@ -268,30 +294,15 @@ await bridge.connect();
 // survivor with a dead bridge.
 //
 // Recovery: poll bridge health. If it's closed but our stdin is still open,
-// we're the process CC kept — reconnect.
-const HEALTH_CHECK_MS = 10_000;
-let stdinClosed = false;
-
-const healthCheck = setInterval(() => {
-  if (stdinClosed) {
-    clearInterval(healthCheck);
-    return;
-  }
-  if (bridge.isClosed) {
-    bridge.reconnect().catch(() => {});
-  }
-}, HEALTH_CHECK_MS);
-
-// Clean shutdown: when CC exits it closes stdin → deregister + close WebSocket.
-process.stdin.on("end", () => {
-  stdinClosed = true;
-  clearInterval(healthCheck);
-  bridge.close();
-  process.exit(0);
-});
-
-process.on("SIGTERM", () => {
-  clearInterval(healthCheck);
-  bridge.close();
-  process.exit(0);
-});
+// we're the process CC kept — reconnect. (Skipped if stdin already closed above.)
+if (!stdinClosed) {
+  healthCheck = setInterval(() => {
+    if (stdinClosed) {
+      if (healthCheck) clearInterval(healthCheck);
+      return;
+    }
+    if (bridge.isClosed) {
+      bridge.reconnect().catch(() => {});
+    }
+  }, HEALTH_CHECK_MS);
+}

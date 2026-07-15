@@ -12,12 +12,14 @@ import { spawn } from "node:child_process";
 import { join } from "node:path";
 import assert from "node:assert/strict";
 
-const CHANNEL_SCRIPT = join(import.meta.dirname, "conductor-channel.js");
+// Run under `bun test` (Phase 4/aby-pizufo): import.meta.dirname is src/, so this
+// points at the .ts the mesh actually runs in production (bun src/, no dist build).
+const CHANNEL_SCRIPT = join(import.meta.dirname, "conductor-channel.ts");
 
 describe("conductor-channel", () => {
   it("exits cleanly (code 0) when MESH_AGENT_ID is absent", async () => {
     const result = await new Promise<{ code: number | null; stderr: string }>((resolve) => {
-      const proc = spawn("node", [CHANNEL_SCRIPT], {
+      const proc = spawn("bun", [CHANNEL_SCRIPT], {
         env: { ...process.env, MESH_AGENT_ID: "", MESH_ROLE: "" },
         stdio: ["pipe", "pipe", "pipe"],
       });
@@ -47,7 +49,7 @@ describe("conductor-channel", () => {
     // (simulating CC shutdown).
     const result = await new Promise<{ code: number | null; stderr: string; duration: number }>((resolve) => {
       const start = Date.now();
-      const proc = spawn("node", [CHANNEL_SCRIPT], {
+      const proc = spawn("bun", [CHANNEL_SCRIPT], {
         env: {
           ...process.env,
           MESH_AGENT_ID: "cc-test-channel-lifecycle",
