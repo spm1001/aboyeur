@@ -98,7 +98,7 @@ The orienting frame for everything below. Don't conflate the rungs — most of w
 
 1. **One-shot `/consult`** (wake a sibling, get a peer answer) — **FREE, works today**, no sonnette, from any cwd. Details: §Phone-a-friend below.
 2. **Mesh-at-birth** (an interactive session that RECEIVES inbound as `<channel>` tags) — needs the dev flag today (one dialog per launch; aby-pafada is the wrapper) or sonnette later. A bridge-connected session is NOT automatically inbound-capable — only a flag-born/allowlisted one is.
-3. **Dialog-free-everywhere** (sonnette) — the vendoring half SHIPPED 2026-07-19 (sonnette@batterie 1.16.0, §Sonnette SHIPPED below); what remains is the allowlist retest (aby-lesefu) that discriminates #43064 from server-shadow.
+3. **Dialog-free-everywhere** (sonnette) — vendoring SHIPPED 2026-07-19 (sonnette@batterie 1.16.0, §Sonnette SHIPPED); allowlist retested same night: **server-shadow confirmed, externally blocked on Anthropic** (§Allowlist verdict). Rung 3 is a Waiting For, not a build.
 
 ## Phone-a-friend proven end-to-end — SOLO, CROSS-LOCUS (2026-07-19 spike)
 
@@ -130,7 +130,17 @@ The packaging problem is solved and the plugin is live in the public marketplace
 - **Verified at the real layer:** fresh `-p` session from a neutral cwd with only the marketplace-installed plugin → mesh_peers answered with live roster; bridge transport log shows `register → conductor_connected → replay`. Clean deregister + WS 1000 on stdin EOF (the early-EOF fix holds under the bundle).
 - **Discovery — plugin tool namespace:** plugin-loaded MCP tools are `mcp__plugin_sonnette_sonnette__mesh_peers` / `__send_message` (`plugin_{plugin}_{server}`), NOT `mcp__sonnette__*`. Allowlists/`--allowed-tools` for plugin-borne mesh tools must use the long form. (`/consult`'s spawned peers use `--mcp-config` server `conductor-channel` → still `mcp__conductor-channel__*`, unaffected.)
 - **Landmine — double server in aboyeur's cwd:** with sonnette installed user-scope, a session in THIS repo loads BOTH the project `.mcp.json` `conductor-channel` AND the plugin — two bridges deriving the SAME agent id from `CLAUDE_CODE_SESSION_ID` → one supersedes the other at startup (supersession-yield makes it stable, but which server's tools are live depends on connect order). Kept `.mcp.json` anyway (it's the dev hot path). If aboyeur sessions misbehave on the mesh, this is the first suspect; options: `claude plugin disable sonnette` locally, or drop `.mcp.json` and iterate via the aboyeur-local dev marketplace.
-- **aby-lesefu is UNBLOCKED:** the non-local, deps-vendored install its retest required now exists. The `/etc` allowlist retest against `{marketplace:"batterie", plugin:"sonnette"}` is the #43064-vs-server-shadow discriminator.
+- **aby-lesefu retest RUN same night — verdict below (§allowlist verdict): server-shadow CONFIRMED, #43064 eliminated.** Dialog-free is externally blocked; aby-lesefu parked as Waiting For (Anthropic #58152 or a Teams console allowlist field).
+
+## Allowlist verdict — SERVER-SHADOW CONFIRMED, observed directly (2026-07-19 late, aby-lesefu retest)
+
+With the properly-packaged sonnette@batterie installed (real git marketplace — the condition the July probe couldn't meet), the `/etc/claude-code/managed-settings.json` allowlist was retested on a fresh **Teams** interactive launch (tmux-driven, Vertex env stripped) and is **dead on this estate**. The evidence, in escalating strength:
+
+1. **Both candidate schemas fail identically.** Top-level `{channelsEnabled, allowedChannelPlugins:[{marketplace,plugin}]}` AND `{policySettings:{channelsEnabled, allowedChannelPlugins:["plugin:sonnette@batterie"]}}` → same `plugin:sonnette@batterie · not on the approved channels allowlist` notice. (A never-read file fails all schemas identically — which is the point.)
+2. **Functional round-trip confirms the denial is real:** a send from a live peer was server-`delivered`, arrived at the probe's bridge transport (`recv conductor_message` in its events.jsonl + inbox.jsonl), and **never surfaced as a `<channel>` tag** — the flagless fingerprint (07-14). NB the startup banner "messages … inject directly in this session" and /status's "Channels: Listening…" both appear ANYWAY — they are boilerplate for any `--channels` launch, NOT evidence of channel activation; only the notice line and a live tag round-trip tell the truth.
+3. **The smoking gun, from CC's own `/status`:** `Setting sources: User settings, Shared project settings, Project local settings, Enterprise managed settings (remote)` — the server-side managed settings are delivered and **the local /etc file is absent from the source list entirely**. Shadow observed, not inferred.
+
+Consequences: **#43064 (allowlist-ignored-for-local-installs) is ELIMINATED** as the operative cause here (this was a non-local install, denied anyway). Dialog-free mesh-at-birth on Teams-with-server-switch **waits on Anthropic** — user-scope allowlist (#58152) or a Teams admin-console allowlist field (console has only the on/off toggle). Until then: **rung 2 = the dev flag (aby-pafada wrapper), rung 1 = /consult — both fully working today.** The /etc file was removed after the test (latent-surprise rule); re-creating it is pointless until Anthropic changes one of the two gates — re-test only after a CC changelog/console change touching channels or managed settings.
 
 ## Sonnette allowlist probe — dialog-free is REACHABLE, but SERVER-SIDE only on Teams (2026-07-19)
 
