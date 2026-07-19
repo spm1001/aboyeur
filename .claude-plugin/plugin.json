@@ -1,6 +1,6 @@
 {
   "name": "sonnette",
-  "version": "1.16.0",
+  "version": "1.16.1",
   "description": "Conductor mesh connectivity — peer-to-peer communication between Claude sessions",
   "author": {
     "name": "Sameer Modha",
