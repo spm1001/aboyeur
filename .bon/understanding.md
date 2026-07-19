@@ -1,6 +1,6 @@
 # Aboyeur — Understanding
 
-A living portrait of this project: what it is, what we've learned, and where the tensions lie. Last updated 15 Jul 2026 (bun made the canonical mesh runtime — Phase 3/aby-bosuwa; send_message reports delivery truth — aby-nowabu). Full rewrite 6 Apr 2026 (peer review loop via Channels MCP).
+A living portrait of this project: what it is, what we've learned, and where the tensions lie. Last updated 19 Jul 2026 (mesh-capability ladder framing; phone-a-friend + sonnette probe both landed earlier same day). Full rewrite 6 Apr 2026 (peer review loop via Channels MCP).
 
 ## What This Is
 
@@ -91,6 +91,14 @@ The mesh is a **synchronous presence fabric, not a message queue.** Complete pic
 - **Design consequence (the rinisa input, one sentence):** wake for a not-running Claude cannot ride the mesh — it needs a spawner (gueridon/daemon) or durable state read at birth (bons) — and Tend's doorbell-not-payload becomes near-mandatory: durable content in bons/files, the mesh carrying only live-peer nudges, with the synchronous error as the trigger to fall back to durable coordination.
 - **Watch (minor):** one harness run showed the first of three arrivals present at transport (events.jsonl) but missing from the client's stdout `message`-event trace — transport is the instrument of record; don't build on emission logs until this is understood.
 - **The sound test method** (keep using it): two independent per-end tallies — fixed run-nonce + seq per *actual* send, receiver reports every `(nonce, seq)` in arrival order, diff the sets. A send-ack is a claim; only the cross-end diff is a measurement.
+
+## The mesh-capability ladder — three rungs, costed very differently (2026-07-19)
+
+The orienting frame for everything below. Don't conflate the rungs — most of what *feels* blocked is only rung 3, and rung 1 already delivers the original "phone a friend for a review" ask:
+
+1. **One-shot `/consult`** (wake a sibling, get a peer answer) — **FREE, works today**, no sonnette, from any cwd. Details: §Phone-a-friend below.
+2. **Mesh-at-birth** (an interactive session that RECEIVES inbound as `<channel>` tags) — needs the dev flag today (one dialog per launch; aby-pafada is the wrapper) or sonnette later. A bridge-connected session is NOT automatically inbound-capable — only a flag-born/allowlisted one is.
+3. **Dialog-free-everywhere** (sonnette) — a real vendoring + server-side-allowlist build gated by an unresolved Anthropic issue (#43064 / #58152), NOT a quick allowlist entry. Details: §Sonnette allowlist probe below.
 
 ## Phone-a-friend proven end-to-end — SOLO, CROSS-LOCUS (2026-07-19 spike)
 

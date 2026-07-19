@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.2.0] - 2026-07-19
+
+Sonnette packaged for distribution through the batterie marketplace (aby-zufefu).
+
+### Added
+- `sonnette/conductor-channel.js` — committed single-file bundle (`npm run
+  build:sonnette`, bun 1.3.14). The batterie assembler vendors source without
+  node_modules; the bundle makes the shipped plugin self-contained.
+- `sonnette/run.sh` — bun-locating launcher. Searches PATH + well-known install
+  dirs and fails loud on stderr when bun is absent (MCP servers fail soft, so a
+  bare `command: "bun"` would ENOENT silently on a bunless machine).
+- CI job `sonnette-bundle-fresh` — rebuilds the bundle (pinned bun) and diffs,
+  so a src/ edit without a rebuild goes red instead of shipping stale.
+
+### Changed
+- plugin.json mcpServers now runs the wrapper + bundle instead of
+  `bun src/conductor-channel.ts` (dev hot path via .mcp.json is unchanged).
+
 ## [0.1.0] - 2026-03-18
 
 Batterie-wide consistency pass: docs consolidation, CI, licensing, versioning.

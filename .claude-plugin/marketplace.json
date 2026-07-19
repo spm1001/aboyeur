@@ -1,7 +1,7 @@
 {
   "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
   "name": "aboyeur-local",
-  "description": "Local marketplace for the sonnette conductor-mesh channel plugin (probe scaffold, 2026-07-19 — may become the real aby-zufefu vehicle or be removed)",
+  "description": "DEV marketplace for the sonnette conductor-mesh channel plugin. The real distribution vehicle is spm1001/batterie (aby-zufefu, 2026-07-19); this local Directory install remains for iterating on sonnette without publishing. NB it exercises the same wrapper+bundle path as the shipped plugin — rebuild with `npm run build:sonnette` after src/ edits.",
   "owner": { "name": "Sameer Modha", "email": "sameer@modha.dev" },
   "plugins": [
     {
