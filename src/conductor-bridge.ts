@@ -30,7 +30,7 @@
  */
 
 // WebSocket is the runtime's built-in WHATWG global (bun; Node 22+) — no `ws` import.
-import { readFileSync, writeFileSync, appendFileSync, mkdirSync, existsSync, statSync } from "node:fs";
+import { readFileSync, writeFileSync, appendFileSync, mkdirSync, existsSync, statSync, unlinkSync } from "node:fs";
 import { execSync } from "node:child_process";
 import { join } from "node:path";
 import { homedir, platform } from "node:os";
@@ -102,9 +102,20 @@ export class ConductorBridge extends EventEmitter<BridgeEvents> {
   private outboxTimer: ReturnType<typeof setInterval> | null = null;
   private reconnectDelay = RECONNECT_DELAY_MS;
   private connectedAt = 0;
+  /** Wall-clock birth of this process's bridge, for the same-id ownership
+   *  tiebreak (aby-suwawo): the OLDER process wins. Captured once at construction
+   *  (≈ process start, since the bridge is built right at spawn and reused across
+   *  reconnects). Race-free discriminator — unlike a liveness poll, it doesn't
+   *  depend on WHEN a superseded process happens to re-check. */
+  private readonly birthMs = Date.now();
   /** Set after one recovery attempt — prevents the health check from flap-looping
    *  with a dual-path sibling. Reset on successful registration (conductor_connected). */
   private recoveryAttempted = false;
+  /** Set once we yield PERMANENTLY to a live, different-pid same-id sibling
+   *  (aby-suwawo: two independent servers — e.g. a project .mcp.json server AND
+   *  the sonnette plugin server in one cwd — deriving the same agentId). The
+   *  health-check layer stops polling on this, so we never re-enter the war. */
+  private yieldedToSibling = false;
 
   constructor(opts: BridgeOptions) {
     super();
@@ -166,6 +177,31 @@ export class ConductorBridge extends EventEmitter<BridgeEvents> {
    *  Returns false if recovery was already attempted (prevents flap loops between
    *  dual-path processes that both have health checks running). */
   async reconnect(): Promise<boolean> {
+    // Yield PERMANENTLY if a live, OLDER, different process owns this agentId's
+    // bridge — the aby-suwawo double-server case (a project .mcp.json server AND
+    // the sonnette plugin server in one cwd, both deriving the same id). The
+    // discriminator is AGE, not mere liveness: the aby-tarafo mid-session-restart
+    // survivor is always the OLDER process (CC spawns a NEW server that briefly
+    // supersedes it, then kills the new one), so an older process must always
+    // revive, never yield. Age is race-free — unlike a liveness poll, the verdict
+    // doesn't depend on WHEN a superseded process happens to re-check (a liveness-
+    // only rule wrongly yielded the tarafo survivor when its poll landed during
+    // the transient superseder's ~1-2s life; caught by the tarafo-revive test).
+    // So: yield only to a live sibling that is strictly older (birthMs, pid as
+    // tiebreak). A dead owner (crashed/killed) fails the liveness check → we take
+    // over. owner is claimed on every successful connect, in the shared bridge dir.
+    // (pid-reuse caveat: a dead owner pid reused within the sub-second race window
+    // could mislead; failure mode is "this session doesn't mesh" — recoverable —
+    // and the birthMs comparison makes a false match even less likely.)
+    const owner = this.readOwner();
+    if (owner && owner.pid !== process.pid && this.pidAlive(owner.pid)
+        && (owner.birthMs < this.birthMs
+            || (owner.birthMs === this.birthMs && owner.pid < process.pid))) {
+      this.log(`Reconnect declined — agentId held by live older sibling pid ${owner.pid} (born ${owner.birthMs} vs my ${this.birthMs}); yielding permanently (avoid same-id war)`);
+      this.closed = true;
+      this.yieldedToSibling = true;
+      return false;
+    }
     if (this.recoveryAttempted) {
       this.log("Reconnect skipped — already attempted recovery (avoiding flap loop)");
       return false;
@@ -181,6 +217,48 @@ export class ConductorBridge extends EventEmitter<BridgeEvents> {
   /** True if the bridge yielded on supersession or was explicitly closed. */
   get isClosed(): boolean {
     return this.closed;
+  }
+
+  /** True once we've yielded permanently to a live same-id sibling (aby-suwawo).
+   *  The conductor-channel health check clears its interval on this, so a duplicate
+   *  server goes quiet instead of re-attempting recovery every 10s forever. */
+  get isPermanentlyYielded(): boolean {
+    return this.yieldedToSibling;
+  }
+
+  // --- Same-id ownership (aby-suwawo) ---
+  // A file "pid:birthMs" in the shared per-agentId bridge dir, naming the process
+  // that currently holds a live bridge for this id and how old it is. Claimed on
+  // every successful connect; checked at the top of reconnect() to tell a live
+  // OLDER sibling (yield to it) from a dead or younger one (take over). Plain
+  // file, liveness- + age-checked — matches the estate's debuggable-files ethos
+  // (status, events.jsonl) and survives crashes (a dead owner's pid fails the
+  // liveness check, so the survivor reclaims).
+  private ownerPath(): string {
+    return join(this.bridgeDir, "owner.pid");
+  }
+  private readOwner(): { pid: number; birthMs: number } | null {
+    try {
+      const [pidStr, birthStr] = readFileSync(this.ownerPath(), "utf8").trim().split(":");
+      const pid = parseInt(pidStr, 10);
+      const birthMs = parseInt(birthStr ?? "", 10);
+      if (!Number.isFinite(pid)) return null;
+      // A pre-birthMs owner file (older format) is treated as birth 0 = oldest,
+      // so a legacy owner wins — safe, and such files self-replace on next connect.
+      return { pid, birthMs: Number.isFinite(birthMs) ? birthMs : 0 };
+    } catch { return null; }
+  }
+  private claimOwner(): void {
+    try { writeFileSync(this.ownerPath(), `${process.pid}:${this.birthMs}`); } catch { /* best effort */ }
+  }
+  private releaseOwner(): void {
+    try {
+      if (this.readOwner()?.pid === process.pid) unlinkSync(this.ownerPath());
+    } catch { /* best effort */ }
+  }
+  private pidAlive(pid: number): boolean {
+    try { process.kill(pid, 0); return true; }       // signal 0 = existence probe
+    catch (e: any) { return e?.code === "EPERM"; }   // EPERM = alive but not ours; ESRCH = gone
   }
 
   send(to: string, message: string): void {
@@ -251,6 +329,9 @@ export class ConductorBridge extends EventEmitter<BridgeEvents> {
   close(): void {
     this.closed = true;
     this.stopTimers();
+    // Release same-id ownership if it's ours, so the next session in this cwd
+    // doesn't briefly see a stale owner (aby-suwawo). No-op if a sibling owns it.
+    this.releaseOwner();
     if (this.ws) {
       // Send deregister before closing — triggers fast ~12s conductor_agent_reset
       // on peers instead of 60-120s conductor_agent_expired (confirmed in bundle
@@ -445,6 +526,10 @@ export class ConductorBridge extends EventEmitter<BridgeEvents> {
         // Clear recovery flag — if we connected successfully, future supersessions
         // should get a fresh recovery attempt (e.g. another mid-session restart).
         this.recoveryAttempted = false;
+        // Claim same-id ownership (aby-suwawo): whoever is currently connected owns
+        // the id. A live sibling reading this at reconnect() yields permanently; a
+        // survivor whose superseder has died reads a stale pid, fails liveness, revives.
+        this.claimOwner();
         this.emit("connected");
         break;
 

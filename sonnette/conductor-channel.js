@@ -13670,7 +13670,7 @@ class StdioServerTransport {
 }
 
 // src/conductor-bridge.ts
-import { readFileSync, writeFileSync, appendFileSync, mkdirSync, existsSync, statSync } from "fs";
+import { readFileSync, writeFileSync, appendFileSync, mkdirSync, existsSync, statSync, unlinkSync } from "fs";
 import { execSync } from "child_process";
 import { join } from "path";
 import { homedir, platform } from "os";
@@ -13699,7 +13699,9 @@ class ConductorBridge extends EventEmitter {
   outboxTimer = null;
   reconnectDelay = RECONNECT_DELAY_MS;
   connectedAt = 0;
+  birthMs = Date.now();
   recoveryAttempted = false;
+  yieldedToSibling = false;
   constructor(opts) {
     super();
     this.agentId = opts.agentId;
@@ -13744,6 +13746,13 @@ class ConductorBridge extends EventEmitter {
     await this.resolveAndConnect();
   }
   async reconnect() {
+    const owner = this.readOwner();
+    if (owner && owner.pid !== process.pid && this.pidAlive(owner.pid) && (owner.birthMs < this.birthMs || owner.birthMs === this.birthMs && owner.pid < process.pid)) {
+      this.log(`Reconnect declined \u2014 agentId held by live older sibling pid ${owner.pid} (born ${owner.birthMs} vs my ${this.birthMs}); yielding permanently (avoid same-id war)`);
+      this.closed = true;
+      this.yieldedToSibling = true;
+      return false;
+    }
     if (this.recoveryAttempted) {
       this.log("Reconnect skipped \u2014 already attempted recovery (avoiding flap loop)");
       return false;
@@ -13757,6 +13766,43 @@ class ConductorBridge extends EventEmitter {
   }
   get isClosed() {
     return this.closed;
+  }
+  get isPermanentlyYielded() {
+    return this.yieldedToSibling;
+  }
+  ownerPath() {
+    return join(this.bridgeDir, "owner.pid");
+  }
+  readOwner() {
+    try {
+      const [pidStr, birthStr] = readFileSync(this.ownerPath(), "utf8").trim().split(":");
+      const pid = parseInt(pidStr, 10);
+      const birthMs = parseInt(birthStr ?? "", 10);
+      if (!Number.isFinite(pid))
+        return null;
+      return { pid, birthMs: Number.isFinite(birthMs) ? birthMs : 0 };
+    } catch {
+      return null;
+    }
+  }
+  claimOwner() {
+    try {
+      writeFileSync(this.ownerPath(), `${process.pid}:${this.birthMs}`);
+    } catch {}
+  }
+  releaseOwner() {
+    try {
+      if (this.readOwner()?.pid === process.pid)
+        unlinkSync(this.ownerPath());
+    } catch {}
+  }
+  pidAlive(pid) {
+    try {
+      process.kill(pid, 0);
+      return true;
+    } catch (e) {
+      return e?.code === "EPERM";
+    }
   }
   send(to, message) {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
@@ -13804,6 +13850,7 @@ class ConductorBridge extends EventEmitter {
   close() {
     this.closed = true;
     this.stopTimers();
+    this.releaseOwner();
     if (this.ws) {
       if (this.ws.readyState === WebSocket.OPEN) {
         this.ws.send(JSON.stringify({ type: "deregister", _agent_id: this.agentId }));
@@ -13936,6 +13983,7 @@ class ConductorBridge extends EventEmitter {
         this.log(`Connected! Protocol v${data.protocol_version}`);
         this.connectedAt = Date.now();
         this.recoveryAttempted = false;
+        this.claimOwner();
         this.emit("connected");
         break;
       case "conductor_replay_complete":
@@ -14329,7 +14377,7 @@ ${JSON.stringify(clientCaps, null, 2)}
 await bridge.connect();
 if (!stdinClosed) {
   healthCheck = setInterval(() => {
-    if (stdinClosed) {
+    if (stdinClosed || bridge.isPermanentlyYielded) {
       if (healthCheck)
         clearInterval(healthCheck);
       return;

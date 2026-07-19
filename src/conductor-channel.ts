@@ -297,7 +297,11 @@ await bridge.connect();
 // we're the process CC kept — reconnect. (Skipped if stdin already closed above.)
 if (!stdinClosed) {
   healthCheck = setInterval(() => {
-    if (stdinClosed) {
+    // Stop polling once stdin closed OR we've yielded permanently to a live
+    // same-id sibling (aby-suwawo) — otherwise we'd re-call reconnect() every
+    // 10s and just log "declined" forever. A genuine survivor never yields, so
+    // its health check keeps running (aby-tarafo revive preserved).
+    if (stdinClosed || bridge.isPermanentlyYielded) {
       if (healthCheck) clearInterval(healthCheck);
       return;
     }

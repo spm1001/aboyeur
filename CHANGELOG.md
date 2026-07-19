@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.2.1] - 2026-07-19
+
+Fixed the same-id double-server war (aby-suwawo).
+
+### Fixed
+- Two conductor servers deriving the same agentId (e.g. a project `.mcp.json`
+  server AND the sonnette plugin server in one cwd) no longer flap forever —
+  each successful reconnect re-armed `recoveryAttempted`, so the yield + health-
+  check-revive fixes combined into a perpetual ~10s supersession loop that
+  spammed every mesh session with `Peer online` events. Now a shared per-agentId
+  `owner.pid` (`pid:birthMs`) lets a younger duplicate yield **permanently** to a
+  live older sibling. Discriminator is AGE, not liveness: the aby-tarafo mid-
+  session-restart survivor is always the older process, so it always revives and
+  never wrongly yields (a liveness-only rule raced and broke tarafo — caught by
+  the two-process revive test in `tests/suwawo-two-process.mjs`).
+
 ## [0.2.0] - 2026-07-19
 
 Sonnette packaged for distribution through the batterie marketplace (aby-zufefu).
