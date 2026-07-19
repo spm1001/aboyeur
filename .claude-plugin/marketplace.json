@@ -1,0 +1,15 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "aboyeur-local",
+  "description": "Local marketplace for the sonnette conductor-mesh channel plugin (probe scaffold, 2026-07-19 — may become the real aby-zufefu vehicle or be removed)",
+  "owner": { "name": "Sameer Modha", "email": "sameer@modha.dev" },
+  "plugins": [
+    {
+      "name": "sonnette",
+      "source": "./",
+      "description": "Conductor mesh connectivity — peer-to-peer channel between Claude sessions",
+      "category": "integration",
+      "keywords": ["mesh", "conductor", "peer", "channels"]
+    }
+  ]
+}
