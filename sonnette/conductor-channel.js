@@ -13998,22 +13998,28 @@ class ConductorBridge extends EventEmitter {
         const payload = data.payload ?? {};
         const replay = data.replay ?? false;
         if (evt === "connect") {
+          const known = peerId in this.peers;
           this.peers[peerId] = {
             label: payload.display?.label ?? peerId,
             app: payload.appName ?? "?",
             color: payload.display?.color ?? ""
           };
           this.writePeers();
-          if (!replay) {
+          if (!replay && !known) {
             this.log(`Peer joined: ${peerId}`);
             this.emit("peer_online", peerId, this.peers[peerId]);
+          } else if (!replay) {
+            this.log(`Peer re-announced (suppressed): ${peerId}`);
           }
         } else if (evt === "disconnect") {
+          const known = peerId in this.peers;
           delete this.peers[peerId];
           this.writePeers();
-          if (!replay) {
+          if (!replay && known) {
             this.log(`Peer left: ${peerId}`);
             this.emit("peer_offline", peerId, "deregister");
+          } else if (!replay) {
+            this.log(`Peer left (unknown, suppressed): ${peerId}`);
           }
         } else if (evt === "status" && peerId in this.peers) {
           this.peers[peerId].file = payload.fileName ?? "";
@@ -14024,14 +14030,19 @@ class ConductorBridge extends EventEmitter {
       case "conductor_agent_online": {
         const peerId = data.agentId ?? "";
         const schema = data.schema ?? {};
+        const known = peerId in this.peers;
         this.peers[peerId] = {
           label: schema.display?.label ?? peerId,
           app: schema.appName ?? "?",
           color: schema.display?.color ?? ""
         };
         this.writePeers();
-        this.log(`Peer online: ${peerId} (${this.peers[peerId].label})`);
-        this.emit("peer_online", peerId, this.peers[peerId]);
+        if (known) {
+          this.log(`Peer re-announced (suppressed): ${peerId}`);
+        } else {
+          this.log(`Peer online: ${peerId} (${this.peers[peerId].label})`);
+          this.emit("peer_online", peerId, this.peers[peerId]);
+        }
         break;
       }
       case "conductor_agent_offline":
@@ -14039,10 +14050,15 @@ class ConductorBridge extends EventEmitter {
       case "conductor_agent_reset": {
         const peerId = data.agentId ?? "";
         const reason = msgType === "conductor_agent_expired" ? "expired" : msgType === "conductor_agent_reset" ? "reset" : "deregister";
+        const known = peerId in this.peers;
         delete this.peers[peerId];
         this.writePeers();
-        this.log(`Peer ${reason}: ${peerId}`);
-        this.emit("peer_offline", peerId, reason);
+        if (known) {
+          this.log(`Peer ${reason}: ${peerId}`);
+          this.emit("peer_offline", peerId, reason);
+        } else {
+          this.log(`Peer ${reason} (unknown, suppressed): ${peerId}`);
+        }
         break;
       }
       case "conductor_message": {
@@ -14325,12 +14341,6 @@ async function notify(content, meta2) {
 }
 bridge.on("message", async (from, message) => {
   await notify(message, { from });
-});
-bridge.on("peer_online", async (peerId, info) => {
-  await notify(`Peer online: ${peerId} (${info.label}, ${info.app})`, { event: "peer_online", peerId });
-});
-bridge.on("peer_offline", async (peerId, reason) => {
-  await notify(`Peer offline: ${peerId} (${reason})`, { event: "peer_offline", peerId, reason });
 });
 bridge.on("connected", async () => {
   const peers = bridge.getPeers();

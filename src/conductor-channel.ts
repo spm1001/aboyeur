@@ -224,14 +224,10 @@ bridge.on("message", async (from, message) => {
   await notify(message, { from });
 });
 
-// Peer joins/leaves → push as channel notification so CC sees mesh changes.
-bridge.on("peer_online", async (peerId, info) => {
-  await notify(`Peer online: ${peerId} (${info.label}, ${info.app})`, { event: "peer_online", peerId });
-});
-
-bridge.on("peer_offline", async (peerId, reason) => {
-  await notify(`Peer offline: ${peerId} (${reason})`, { event: "peer_offline", peerId, reason });
-});
+// Roster churn (peer_online/peer_offline) deliberately does NOT surface as
+// channel tags: presence is pull (mesh_peers), only messages push (aby-huciza,
+// 2026-07-26 — a 33-session day put 9-17 join/leave tags in every listening
+// session). The bridge still tracks the roster for mesh_peers and peers.json.
 
 // On successful connection: push a peer summary (replay filtering).
 // The bridge processes replayed events internally (building peers map) but

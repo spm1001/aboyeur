@@ -548,22 +548,31 @@ export class ConductorBridge extends EventEmitter<BridgeEvents> {
         const replay: boolean = data.replay ?? false;
 
         if (evt === "connect") {
+          // Emit peer_online only on absent→present transitions: a re-register
+          // (double-server birth, heartbeat re-fire) updates the map silently
+          // instead of re-announcing to consumers (aby-huciza; was aby-paluvu).
+          const known = peerId in this.peers;
           this.peers[peerId] = {
             label: payload.display?.label ?? peerId,
             app: payload.appName ?? "?",
             color: payload.display?.color ?? "",
           };
           this.writePeers();
-          if (!replay) {
+          if (!replay && !known) {
             this.log(`Peer joined: ${peerId}`);
             this.emit("peer_online", peerId, this.peers[peerId]);
+          } else if (!replay) {
+            this.log(`Peer re-announced (suppressed): ${peerId}`);
           }
         } else if (evt === "disconnect") {
+          const known = peerId in this.peers;
           delete this.peers[peerId];
           this.writePeers();
-          if (!replay) {
+          if (!replay && known) {
             this.log(`Peer left: ${peerId}`);
             this.emit("peer_offline", peerId, "deregister");
+          } else if (!replay) {
+            this.log(`Peer left (unknown, suppressed): ${peerId}`);
           }
         } else if (evt === "status" && peerId in this.peers) {
           this.peers[peerId].file = payload.fileName ?? "";
@@ -575,14 +584,20 @@ export class ConductorBridge extends EventEmitter<BridgeEvents> {
       case "conductor_agent_online": {
         const peerId: string = data.agentId ?? "";
         const schema = data.schema ?? {};
+        // Same absent→present gate as conductor_event connect above.
+        const known = peerId in this.peers;
         this.peers[peerId] = {
           label: schema.display?.label ?? peerId,
           app: schema.appName ?? "?",
           color: schema.display?.color ?? "",
         };
         this.writePeers();
-        this.log(`Peer online: ${peerId} (${this.peers[peerId].label})`);
-        this.emit("peer_online", peerId, this.peers[peerId]);
+        if (known) {
+          this.log(`Peer re-announced (suppressed): ${peerId}`);
+        } else {
+          this.log(`Peer online: ${peerId} (${this.peers[peerId].label})`);
+          this.emit("peer_online", peerId, this.peers[peerId]);
+        }
         break;
       }
 
@@ -593,10 +608,15 @@ export class ConductorBridge extends EventEmitter<BridgeEvents> {
         const reason = msgType === "conductor_agent_expired" ? "expired" as const
           : msgType === "conductor_agent_reset" ? "reset" as const
           : "deregister" as const;
+        const known = peerId in this.peers;
         delete this.peers[peerId];
         this.writePeers();
-        this.log(`Peer ${reason}: ${peerId}`);
-        this.emit("peer_offline", peerId, reason);
+        if (known) {
+          this.log(`Peer ${reason}: ${peerId}`);
+          this.emit("peer_offline", peerId, reason);
+        } else {
+          this.log(`Peer ${reason} (unknown, suppressed): ${peerId}`);
+        }
         break;
       }
 
