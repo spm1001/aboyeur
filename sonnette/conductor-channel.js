@@ -6519,7 +6519,7 @@ var require_dist = __commonJS((exports, module) => {
 // src/conductor-channel.ts
 import { basename, join as join2 } from "path";
 import { homedir as homedir2 } from "os";
-import { readdirSync, statSync as statSync2, writeFileSync as writeFileSync2, appendFileSync as appendFileSync2 } from "fs";
+import { readdirSync, statSync as statSync2, readFileSync as readFileSync3, writeFileSync as writeFileSync2, appendFileSync as appendFileSync2 } from "fs";
 
 // node_modules/zod/v4/core/core.js
 var NEVER = Object.freeze({
@@ -14228,6 +14228,38 @@ function meshAgentId(folder, sessionUuid) {
   return `cc-${folder}-${sessionUuid.slice(0, 8)}`;
 }
 
+// src/mesh-capability.ts
+import { readFileSync as readFileSync2 } from "fs";
+var CHANNELS_FLAG = "--dangerously-load-development-channels";
+function parentArgv(ppid) {
+  try {
+    return readFileSync2(`/proc/${ppid}/cmdline`, "utf8").split("\x00").filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+function detectMeshCapability(env = process.env, argv = parentArgv(process.ppid)) {
+  if (env.CLAUDE_CODE_USE_VERTEX === "1" || env.CLAUDE_CODE_USE_BEDROCK === "1") {
+    return { canReceive: false, reason: "vertex", detail: "third-party provider: CC does not bind channels" };
+  }
+  const entrypoint = env.CLAUDE_CODE_ENTRYPOINT ?? "";
+  const headlessArgv = argv.includes("-p") || argv.includes("--print");
+  if (entrypoint !== "cli" || headlessArgv) {
+    return {
+      canReceive: false,
+      reason: "headless",
+      detail: `non-interactive session (entrypoint=${entrypoint || "unset"}): inbound never surfaces`
+    };
+  }
+  if (!argv.includes(CHANNELS_FLAG)) {
+    return { canReceive: false, reason: "no-flag", detail: "launched without the channels flag" };
+  }
+  if (argv.includes("-c") || argv.includes("--continue") || argv.includes("--resume")) {
+    return { canReceive: false, reason: "resumed", detail: "resumed session: inbound surfacing dies on resume" };
+  }
+  return { canReceive: true, detail: "flag-born interactive session" };
+}
+
 // src/conductor-channel.ts
 try {
   const claudeVars = Object.entries(process.env).filter(([k]) => k.startsWith("CLAUDE") || k.startsWith("MCP") || k.startsWith("MESH") || k === "CLAUDECODE").sort(([a], [b]) => a.localeCompare(b)).map(([k, v]) => `${k}=${v}`).join(`
@@ -14272,6 +14304,7 @@ Fallback: ${base} (no session JSONL found)
 }
 var agentId = process.env.MESH_AGENT_ID || deriveAgentId();
 var role = process.env.MESH_ROLE ?? "user";
+var capability = role === "user" ? detectMeshCapability() : { canReceive: true, detail: `daemon-spawned role=${role}: channel-bound by construction` };
 var INSTRUCTIONS_BY_ROLE = {
   worker: "You are connected to the Anthropic conductor mesh. Mesh messages arrive as " + '<channel source="conductor-channel"> tags with a "from" field. You are a worker mid-task \u2014 ' + "finish your current task first, then reply using the send_message tool. " + "Do not interrupt your work for mesh messages unless the message is from your PM and says STOP.",
   aboyeur: "You are connected to the Anthropic conductor mesh. Mesh messages arrive as " + '<channel source="conductor-channel"> tags with a "from" field. Respond promptly. ' + "Use send_message to reply, passing the 'from' value as the 'to' argument. " + "Use mesh_peers to see who is online before sending to a new peer.",
@@ -14331,6 +14364,10 @@ var bridge = new ConductorBridge({
   logFile: `/tmp/conductor-bridge/${agentId}/bridge.log`,
   fileName: agentId
 });
+try {
+  writeFileSync2(`/tmp/conductor-bridge/${agentId}/capability`, JSON.stringify({ canReceive: capability.canReceive, detail: capability.detail }) + `
+`);
+} catch {}
 async function notify(content, meta2) {
   try {
     await mcp.notification({
@@ -14355,6 +14392,22 @@ ${lines.join(`
 bridge.on("error", (err) => {
   console.error(`[conductor-channel] bridge error: ${err}`);
 });
+mcp.oninitialized = () => {
+  try {
+    let cmdline = "(unreadable)";
+    try {
+      cmdline = readFileSync3(`/proc/${process.ppid}/cmdline`, "utf8").split("\x00").join(" ").trim();
+    } catch {}
+    appendFileSync2(`/tmp/conductor-channel-env-${process.pid}.txt`, `
+--- MCP clientInfo (oninitialized) ---
+${JSON.stringify(mcp.getClientVersion(), null, 2)}
+` + `--- MCP clientCapabilities (oninitialized) ---
+${JSON.stringify(mcp.getClientCapabilities(), null, 2)}
+` + `--- parent cmdline (ppid ${process.ppid}) ---
+${cmdline}
+`);
+  } catch {}
+};
 await mcp.connect(new StdioServerTransport);
 var HEALTH_CHECK_MS = 1e4;
 var stdinClosed = false;
@@ -14373,17 +14426,6 @@ process.stdin.on("close", shutdown);
 process.on("SIGTERM", shutdown);
 if (process.stdin.readableEnded)
   shutdown();
-try {
-  const clientVersion = mcp.getClientVersion();
-  const clientCaps = mcp.getClientCapabilities();
-  appendFileSync2(`/tmp/conductor-channel-env-${process.pid}.txt`, `
---- MCP clientInfo ---
-${JSON.stringify(clientVersion, null, 2)}
-` + `
---- MCP clientCapabilities ---
-${JSON.stringify(clientCaps, null, 2)}
-`);
-} catch {}
 await bridge.connect();
 if (!stdinClosed) {
   healthCheck = setInterval(() => {

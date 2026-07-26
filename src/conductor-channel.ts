@@ -28,12 +28,13 @@
 
 import { basename, join } from "node:path";
 import { homedir } from "node:os";
-import { readdirSync, statSync, writeFileSync, appendFileSync } from "node:fs";
+import { readdirSync, statSync, readFileSync, writeFileSync, appendFileSync } from "node:fs";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { ListToolsRequestSchema, CallToolRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import { ConductorBridge } from "./conductor-bridge.js";
 import { meshAgentId } from "./mesh-id.js";
+import { detectMeshCapability } from "./mesh-capability.js";
 
 // Diagnostic: dump env + MCP init info
 try {
@@ -101,6 +102,14 @@ function deriveAgentId(): string {
 
 const agentId = process.env.MESH_AGENT_ID || deriveAgentId();
 const role = process.env.MESH_ROLE ?? "user";
+
+// Can this session actually surface inbound messages, or is it send-only?
+// Consumed by the registration schema, mesh_peers and send-time warnings
+// (aby-sahifi) and the statusline glyph (aby-kisemi). Daemon-spawned roles are
+// channel-bound by construction via spawnAgent, so they are trusted as receivers.
+const capability = role === "user"
+  ? detectMeshCapability()
+  : { canReceive: true, detail: `daemon-spawned role=${role}: channel-bound by construction` };
 
 // --- Instructions injected into CC's system prompt ---
 // Role-aware: workers queue and defer, aboyeur/pm respond promptly.
@@ -204,6 +213,14 @@ const bridge = new ConductorBridge({
   fileName: agentId,
 });
 
+// Publish the capability verdict beside the bridge's other status files, so
+// statusline.sh and any other out-of-process consumer can read it without
+// re-deriving the rules. Written once — capability is fixed at session birth.
+try {
+  writeFileSync(`/tmp/conductor-bridge/${agentId}/capability`,
+    JSON.stringify({ canReceive: capability.canReceive, detail: capability.detail }) + "\n");
+} catch { /* bridge dir not writable — non-fatal, detection still works in-process */ }
+
 // Push a channel notification to CC, swallowing errors if stdin is already closing.
 async function notify(content: string, meta: Record<string, unknown>) {
   try {
@@ -250,6 +267,24 @@ bridge.on("error", (err) => {
 
 // --- Lifecycle ---
 
+// Diagnostic: capture what the client declared at initialize (aby-masogo probe).
+// Registered BEFORE connect so the callback can't miss the event — the old
+// version read getClientCapabilities() right after mcp.connect(), which resolves
+// on transport start, BEFORE the client's initialize arrives; every dump showed
+// "undefined", which was the instrument's limit, not a finding.
+mcp.oninitialized = () => {
+  try {
+    let cmdline = "(unreadable)";
+    try {
+      cmdline = readFileSync(`/proc/${process.ppid}/cmdline`, "utf8").split("\0").join(" ").trim();
+    } catch { /* non-Linux or gone */ }
+    appendFileSync(`/tmp/conductor-channel-env-${process.pid}.txt`,
+      `\n--- MCP clientInfo (oninitialized) ---\n${JSON.stringify(mcp.getClientVersion(), null, 2)}\n` +
+      `--- MCP clientCapabilities (oninitialized) ---\n${JSON.stringify(mcp.getClientCapabilities(), null, 2)}\n` +
+      `--- parent cmdline (ppid ${process.ppid}) ---\n${cmdline}\n`);
+  } catch { /* ignore */ }
+};
+
 await mcp.connect(new StdioServerTransport());
 
 const HEALTH_CHECK_MS = 10_000;
@@ -276,15 +311,6 @@ process.on("SIGTERM", shutdown);
 // Guard the already-ended case: an EOF that landed before the listeners above
 // (stdin closed at spawn — CC never really connected) fires no future event.
 if (process.stdin.readableEnded) shutdown();
-
-// Diagnostic: capture MCP client info (looking for session ID)
-try {
-  const clientVersion = mcp.getClientVersion();
-  const clientCaps = mcp.getClientCapabilities();
-  appendFileSync(`/tmp/conductor-channel-env-${process.pid}.txt`,
-    `\n--- MCP clientInfo ---\n${JSON.stringify(clientVersion, null, 2)}\n` +
-    `\n--- MCP clientCapabilities ---\n${JSON.stringify(clientCaps, null, 2)}\n`);
-} catch { /* ignore */ }
 
 await bridge.connect();
 
