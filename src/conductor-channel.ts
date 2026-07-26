@@ -120,9 +120,14 @@ const INSTRUCTIONS_BY_ROLE: Record<string, string> = {
     '<channel source="conductor-channel"> tags with a "from" field. Respond promptly to ' +
     "worker verdicts and aboyeur messages. Use send_message to reply or route.",
   user:
-    "You are connected to the Anthropic conductor mesh. Mesh messages arrive as " +
-    '<channel source="conductor-channel"> tags with a "from" field. ' +
-    "Use send_message to reply, mesh_peers to see who is online.",
+    "You are connected to the Anthropic conductor mesh. Use mesh_peers to see " +
+    "who is online and send_message to message a peer. Sending works from any " +
+    "session; receiving does not: inbound messages arrive as " +
+    '<channel source="conductor-channel"> tags with a "from" field ONLY in ' +
+    "sessions launched with the channels flag " +
+    "(--dangerously-load-development-channels). If this session was not, you " +
+    "are send-only — replies cannot reach you, so do not wait on them; ask " +
+    "the human to relay, or coordinate via files.",
 };
 
 const instructions = INSTRUCTIONS_BY_ROLE[role] ?? INSTRUCTIONS_BY_ROLE.user;
