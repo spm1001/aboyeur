@@ -103,5 +103,17 @@ It is also *better* on the axes where Sonnette actually bled: no roster ghosts, 
 2. **No offline queue.** Neither had one. Aboyeur's existing answer stands and is better than a queue: **bons are the inbox**, and the wake carries ids and counts, never source text ("doorbell not payload").
 3. **No broadcast or topics.** Loop over `ListAgents`; the identical-text dedup means a broadcast must vary its text per recipient or most copies vanish silently.
 
-**The trap to carry forward:** `success: true` with a fresh `msg_id` is *not* arrival when the text repeats. Anything periodic needs `--stamp` or its own varying content. This is Sonnette's `aby-nowabu` lesson arriving through a new door, and it is the single most likely way this bites us later.
+**The trap to carry forward:** `success: true` with a fresh `msg_id` is *not* arrival when the text repeats. This is Sonnette's `aby-nowabu` lesson arriving through a new door, and it is the single most likely way this bites us later.
+
+## What we did about it — three tiers, not one document
+
+Reviewing the traffic produced three different kinds of residue, and each wanted a different home. Writing all of it as prose would have been the lazy answer.
+
+**Enforced in code.** `sonner` now stamps every message by default (`--no-stamp` opts out). A hazard invisible from both ends is the wrong thing to protect against opt-in. Verified: two identical invocations 104 ms apart both delivered, where unstamped they would have collapsed to one.
+
+**Filed for the moment-of-action tier.** `carte-cutuga` on the `~/.claude` board. The duplicate-drop has an *observable trigger* — a `SendMessage` whose text matches a recent one — so by the three-tier rule it argues for a gouteur render at the send rather than a prose row. Prose is the fallback if the render cannot see prior sends.
+
+**Written down as habits.** `~/.claude/skills/peer-messaging/` — the residue that no gate can catch: what to put in a message, when a wake earns its cost against just filing a board item, how to answer at machine register, and who holds the next move. Grounded in what four sessions actually did on 2026-08-08 rather than in what sounds sensible.
+
+Observed habits worth their place, all from tonight's traffic: four of four sessions burned a round trip on the bare-name address; two woken sessions wrote polished human-facing reports to a machine reader; one applied Sonnette's channels-flag lore to a transport with no such concept and attached a confident verdict; and two — correctly — volunteered that they had left the repo's own work untouched.
 
