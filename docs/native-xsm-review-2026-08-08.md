@@ -117,3 +117,31 @@ Reviewing the traffic produced three different kinds of residue, and each wanted
 
 Observed habits worth their place, all from tonight's traffic: four of four sessions burned a round trip on the bare-name address; two woken sessions wrote polished human-facing reports to a machine reader; one applied Sonnette's channels-flag lore to a transport with no such concept and attached a confident verdict; and two — correctly — volunteered that they had left the repo's own work untouched.
 
+## Late finding: the session registry beats /proc, and makes sonner portable
+
+A subagent testing the skill reported two things worth verifying directly, and both held.
+
+**`ListAgents` is not provisioned everywhere.** It searched twice and the tool was absent in a subagent context, which removes the listing the addressing rule leans on. It recovered by the route the skill itself names — send the bare name, read the refusal, resend in the form the refusal gives — so the guidance degrades gracefully. Worth knowing that the tool is not a given.
+
+**Every session registers itself at `~/.claude/sessions/<pid>.json`.** Verified by reading one:
+
+```json
+{ "pid": 954309, "sessionId": "b4aacb1d-…", "cwd": "/home/modha/repos/spm1001/infra",
+  "startedAt": 1786226963824, "procStart": "10472862", "version": "2.1.226",
+  "peerProtocol": 1, "kind": "interactive", "entrypoint": "sdk-cli",
+  "messagingSocketPath": "/run/user/1000/cc-socks/954309.sock",
+  "name": "infra-92", "nameSource": "derived" }
+```
+
+This is the "files on disk" the documentation alludes to without naming, and it is strictly better than the `/proc` derivation sonner shipped with. It carries the session's **addressable name**, which `/proc` cannot know; it gives the socket path outright rather than by convention; it includes `procStart`, which guards against pid recycling; and it needs no `/proc` at all — **so the same discovery works on a Mac.**
+
+`sonner` now reads the registry, checks the socket still exists and the pid is still alive (a record can outlive its session), and reports names rather than bare pids:
+
+```
+$ sonner --list
+repos-91               962571  /home/modha/repos
+infra-92               954309  /home/modha/repos/spm1001/infra
+```
+
+The `/proc` trick remains a true fact about this estate and is no longer how sonner works.
+

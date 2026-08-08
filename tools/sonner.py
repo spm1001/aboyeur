@@ -42,37 +42,64 @@ import time
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import NamedTuple
 
 
-def socket_dir() -> Path:
-    """Where Claude Code binds per-session inbox sockets."""
-    runtime = os.environ.get("XDG_RUNTIME_DIR")
-    if runtime:
-        return Path(runtime) / "cc-socks"
-    return Path("/tmp") / f"cc-socks-{os.getuid()}"
+class Session(NamedTuple):
+    pid: int
+    cwd: Path
+    socket: Path
+    name: str
+    started: int
 
 
-def live_sessions() -> list[tuple[int, Path, Path]]:
-    """Every reachable session as (pid, cwd, socket_path), newest first.
+def registry_dir() -> Path:
+    """Where each session records itself before binding its inbox socket."""
+    return Path(os.environ.get("CLAUDE_CONFIG_DIR", Path.home() / ".claude")) / "sessions"
 
-    The socket filename is the session's pid, so /proc gives us its working
-    directory — the only way a script can tell which repo a session is sitting in.
+
+def live_sessions() -> list[Session]:
+    """Every reachable session, newest first, from Claude Code's own registry.
+
+    Each session writes <pid>.json carrying its cwd, name and socket path, then
+    binds that socket. Reading the registry beats deriving the same facts from
+    /proc: it carries the session's addressable name, which /proc cannot know,
+    and it costs nothing on a machine without /proc.
+
+    A record can outlive its session, so liveness is checked rather than assumed.
     """
     found = []
-    for sock in socket_dir().glob("*.sock"):
+    for record in registry_dir().glob("*.json"):
         try:
-            pid = int(sock.stem)
-            cwd = Path(os.readlink(f"/proc/{pid}/cwd"))
-        except (ValueError, OSError):
-            continue  # not a session socket, or the process is gone
-        found.append((pid, cwd, sock))
-    found.sort(key=lambda s: s[2].stat().st_mtime, reverse=True)
+            r = json.loads(record.read_text())
+            session = Session(
+                pid=int(r["pid"]),
+                cwd=Path(r["cwd"]),
+                socket=Path(r["messagingSocketPath"]),
+                name=r.get("name") or f"pid-{r['pid']}",
+                started=int(r.get("startedAt", 0)),
+            )
+        except (OSError, ValueError, KeyError):
+            continue  # unreadable or not a session record
+
+        if not session.socket.exists():
+            continue  # session gone, record not yet reaped
+        try:
+            os.kill(session.pid, 0)
+        except ProcessLookupError:
+            continue
+        except PermissionError:
+            pass  # alive, just not ours to signal
+
+        found.append(session)
+
+    found.sort(key=lambda s: s.started, reverse=True)
     return found
 
 
-def sessions_in(repo: Path) -> list[tuple[int, Path, Path]]:
+def sessions_in(repo: Path) -> list[Session]:
     """Sessions whose cwd is the repo or somewhere inside it."""
-    return [s for s in live_sessions() if s[1] == repo or repo in s[1].parents]
+    return [s for s in live_sessions() if s.cwd == repo or repo in s.cwd.parents]
 
 
 def deliver(sock_path: Path, body: str, sender: str) -> None:
@@ -103,14 +130,14 @@ def deliver(sock_path: Path, body: str, sender: str) -> None:
         s.sendall((json.dumps(envelope) + "\n").encode())
 
 
-def spawn(repo: Path, timeout: float = 90.0) -> tuple[int, Path, Path]:
+def spawn(repo: Path, timeout: float = 90.0) -> Session:
     """Start a session in `repo` under tmux and wait for its inbox socket.
 
     Returns the new session once it is reachable. The session is left running and
     detached, so it can be attached to later and messaged again.
     """
     tmux_name = f"sonner-{repo.name}"
-    before = {s[2] for s in live_sessions()}
+    before = {s.socket for s in live_sessions()}
 
     subprocess.run(
         ["tmux", "new-session", "-d", "-s", tmux_name, "-c", str(repo), "claude"],
@@ -120,7 +147,7 @@ def spawn(repo: Path, timeout: float = 90.0) -> tuple[int, Path, Path]:
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         for session in sessions_in(repo):
-            if session[2] not in before:
+            if session.socket not in before:
                 return session
         time.sleep(0.5)
 
@@ -150,8 +177,8 @@ def main() -> int:
         sessions = live_sessions()
         if not sessions:
             print("no reachable sessions")
-        for pid, cwd, sock in sessions:
-            print(f"{pid:>8}  {cwd}")
+        for s in sessions:
+            print(f"{s.name:<20} {s.pid:>8}  {s.cwd}")
         return 0
 
     if not args.repo or not args.message:
@@ -179,10 +206,10 @@ def main() -> int:
     elif not args.all:
         targets = targets[:1]
 
-    for pid, cwd, sock in targets:
-        deliver(sock, body, args.sender)
+    for s in targets:
+        deliver(s.socket, body, args.sender)
         how = "woke" if spawned else "rang"
-        print(f"{how} pid {pid} in {cwd}")
+        print(f"{how} {s.name} (pid {s.pid}) in {s.cwd}")
 
     return 0
 
