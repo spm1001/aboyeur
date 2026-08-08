@@ -22,11 +22,12 @@ reads as the *user* speaking, which invites deference. Delivering over the socke
 the peer framing, so the woken Claude treats it as a colleague's note and applies the
 harness's own peer guardrails (a peer cannot approve permissions or change config).
 
-    sonner REPO MESSAGE [--from NAME] [--all] [--no-spawn] [--stamp] [--list]
+    sonner REPO MESSAGE [--from NAME] [--all] [--no-spawn] [--no-stamp] [--list]
 
-Note on repeats: Claude Code silently drops a message whose text is byte-identical to a
-recent one from the same sender, while still reporting success. Fixed-text heartbeats
-therefore vanish. Use --stamp (appends an ISO timestamp) for anything periodic.
+Every message carries a timestamp, because Claude Code silently drops a message whose
+text is byte-identical to a recent one from the same sender while still reporting
+success. A fixed-text heartbeat would vanish with nothing to see. The stamp makes that
+class of loss impossible rather than merely documented; --no-stamp opts out.
 """
 
 from __future__ import annotations
@@ -136,7 +137,12 @@ def main() -> int:
     p.add_argument("--from", dest="sender", default="sonner", help="sender name shown to the receiver")
     p.add_argument("--all", action="store_true", help="ring every session in the repo, not just the newest")
     p.add_argument("--no-spawn", action="store_true", help="fail rather than start a session")
-    p.add_argument("--stamp", action="store_true", help="append a timestamp so repeats are not deduplicated")
+    p.add_argument(
+        "--no-stamp",
+        dest="stamp",
+        action="store_false",
+        help="omit the timestamp — only for one-off messages you will never repeat",
+    )
     p.add_argument("--list", action="store_true", help="show reachable sessions and exit")
     args = p.parse_args()
 
@@ -158,7 +164,7 @@ def main() -> int:
 
     body = args.message
     if args.stamp:
-        body = f"{body}\n\n[{datetime.now(timezone.utc).isoformat(timespec='seconds')}]"
+        body = f"{body}\n\n[{datetime.now(timezone.utc).isoformat(timespec='milliseconds')}]"
 
     targets = sessions_in(repo)
     spawned = False
