@@ -63,7 +63,8 @@ def socket_dirs() -> list[Path]:
     runtime = os.environ.get("XDG_RUNTIME_DIR")
     if runtime:
         dirs.append(Path(runtime) / "cc-socks")
-    dirs.append(Path("/tmp") / f"cc-socks-{os.getuid()}")  # macOS and no-XDG fallback
+    dirs.append(Path("/tmp") / "cc-socks")  # macOS (verified live: /tmp/cc-socks/<pid>.sock)
+    dirs.append(Path("/tmp") / f"cc-socks-{os.getuid()}")  # the binary's long-path fallback
     return [d for d in dirs if d.is_dir()]
 
 
@@ -102,8 +103,14 @@ def live_sessions() -> list[Session]:
     /proc) the cwd; a record without a socket is a dead session's leavings.
     """
     records = session_records()
+    # Scanned dirs catch record-less sessions; records catch sockets bound in a
+    # layout we didn't anticipate (each record names its own socket path).
+    candidates = {s for d in socket_dirs() for s in d.glob("*.sock")}
+    candidates.update(
+        Path(r["messagingSocketPath"]) for r in records.values() if "messagingSocketPath" in r
+    )
     found = []
-    for sock in (s for d in socket_dirs() for s in d.glob("*.sock")):
+    for sock in candidates:
         try:
             pid = int(sock.stem)
             os.kill(pid, 0)
@@ -111,6 +118,8 @@ def live_sessions() -> list[Session]:
             continue  # not a session socket, or its process is gone
         except PermissionError:
             pass  # alive, just not ours to signal
+        if not sock.exists():
+            continue  # record named a socket that is already gone
 
         r = records.get(pid, {})
         cwd = r.get("cwd")
