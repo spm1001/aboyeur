@@ -62,7 +62,7 @@ Working findings log for: can Claude Code's built-in `ListAgents`/`SendMessage` 
 
 ## sonner — closing the gap native messaging leaves
 
-Native messaging only reaches sessions **already running**. There is no store-and-forward and no spawn-on-demand, so a message to a repo nobody is sitting in is undeliverable. `tools/sonner.py` closes that, using only primitives proven above.
+Native messaging only reaches sessions **already running**. There is no store-and-forward and no spawn-on-demand, so a message to a repo nobody is sitting in is undeliverable. sonner closes that, using only primitives proven above. *(Born here as `tools/sonner.py`; extracted 2026-08-09 to its own repo, `~/repos/spm1001/sonner`, where it lives with the peer-messaging skill — installed on PATH via `uv tool install`.)*
 
 Discovery, which the docs don't spell out but `/proc` gives for free: **the socket filename is the session's pid**, so `readlink /proc/<pid>/cwd` says which repo each live session is in. That is the whole trick — a plain script can route by repo without any Claude Code API.
 
