@@ -47,51 +47,87 @@ from typing import NamedTuple
 
 class Session(NamedTuple):
     pid: int
-    cwd: Path
+    cwd: Path | None  # None: reachable but unplaceable (no record, no /proc)
     socket: Path
     name: str
     started: int
 
 
-def registry_dir() -> Path:
-    """Where each session records itself before binding its inbox socket."""
-    return Path(os.environ.get("CLAUDE_CONFIG_DIR", Path.home() / ".claude")) / "sessions"
+def socket_dirs() -> list[Path]:
+    """Where sessions bind inbox sockets — the machine-wide ground truth.
+
+    Every session on the machine binds here regardless of which config dir it
+    runs under, so this is the roster; registry records are only an enrichment.
+    """
+    dirs = []
+    runtime = os.environ.get("XDG_RUNTIME_DIR")
+    if runtime:
+        dirs.append(Path(runtime) / "cc-socks")
+    dirs.append(Path("/tmp") / f"cc-socks-{os.getuid()}")  # macOS and no-XDG fallback
+    return [d for d in dirs if d.is_dir()]
+
+
+def session_records() -> dict[int, dict]:
+    """Session records by pid, swept across every config dir on the machine.
+
+    Each session writes <pid>.json under ITS OWN config dir's sessions/ — so a
+    session running with CLAUDE_CONFIG_DIR=~/.claude-commis registers there, not
+    in ~/.claude. Reading only one registry silently hides every session homed in
+    another (which is exactly how the first ~/notes/work ring was lost: sonner
+    inherited the caller's CLAUDE_CONFIG_DIR and watched the wrong letterbox for
+    90 seconds while the spawned session registered in the default one).
+    """
+    home = Path.home()
+    config_dirs = {home / ".claude", *home.glob(".claude-*")}
+    env = os.environ.get("CLAUDE_CONFIG_DIR")
+    if env:
+        config_dirs.add(Path(env))
+
+    records: dict[int, dict] = {}
+    for config in config_dirs:
+        for record in (config / "sessions").glob("*.json"):
+            try:
+                r = json.loads(record.read_text())
+                records[int(r["pid"])] = r
+            except (OSError, ValueError, KeyError):
+                continue
+    return records
 
 
 def live_sessions() -> list[Session]:
-    """Every reachable session, newest first, from Claude Code's own registry.
+    """Every reachable session, newest first: sockets for truth, records for names.
 
-    Each session writes <pid>.json carrying its cwd, name and socket path, then
-    binds that socket. Reading the registry beats deriving the same facts from
-    /proc: it carries the session's addressable name, which /proc cannot know,
-    and it costs nothing on a machine without /proc.
-
-    A record can outlive its session, so liveness is checked rather than assumed.
+    A bound socket whose pid is alive IS a session, whether or not any record
+    describes it. The record adds the addressable name and (on machines without
+    /proc) the cwd; a record without a socket is a dead session's leavings.
     """
+    records = session_records()
     found = []
-    for record in registry_dir().glob("*.json"):
+    for sock in (s for d in socket_dirs() for s in d.glob("*.sock")):
         try:
-            r = json.loads(record.read_text())
-            session = Session(
-                pid=int(r["pid"]),
-                cwd=Path(r["cwd"]),
-                socket=Path(r["messagingSocketPath"]),
-                name=r.get("name") or f"pid-{r['pid']}",
-                started=int(r.get("startedAt", 0)),
-            )
-        except (OSError, ValueError, KeyError):
-            continue  # unreadable or not a session record
-
-        if not session.socket.exists():
-            continue  # session gone, record not yet reaped
-        try:
-            os.kill(session.pid, 0)
-        except ProcessLookupError:
-            continue
+            pid = int(sock.stem)
+            os.kill(pid, 0)
+        except (ValueError, ProcessLookupError):
+            continue  # not a session socket, or its process is gone
         except PermissionError:
             pass  # alive, just not ours to signal
 
-        found.append(session)
+        r = records.get(pid, {})
+        cwd = r.get("cwd")
+        if cwd is None:
+            try:
+                cwd = os.readlink(f"/proc/{pid}/cwd")
+            except OSError:
+                pass  # no record and no /proc: reachable but unplaceable
+        found.append(
+            Session(
+                pid=pid,
+                cwd=Path(cwd) if cwd else None,
+                socket=sock,
+                name=r.get("name") or f"pid-{pid}",
+                started=int(r.get("startedAt", 0)) or int(sock.stat().st_mtime * 1000),
+            )
+        )
 
     found.sort(key=lambda s: s.started, reverse=True)
     return found
@@ -99,7 +135,7 @@ def live_sessions() -> list[Session]:
 
 def sessions_in(repo: Path) -> list[Session]:
     """Sessions whose cwd is the repo or somewhere inside it."""
-    return [s for s in live_sessions() if s.cwd == repo or repo in s.cwd.parents]
+    return [s for s in live_sessions() if s.cwd and (s.cwd == repo or repo in s.cwd.parents)]
 
 
 def deliver(sock_path: Path, body: str, sender: str) -> None:
@@ -130,13 +166,16 @@ def deliver(sock_path: Path, body: str, sender: str) -> None:
         s.sendall((json.dumps(envelope) + "\n").encode())
 
 
-def spawn(repo: Path, timeout: float = 90.0) -> Session:
+def spawn(repo: Path, timeout: float = 180.0) -> Session:
     """Start a session in `repo` under tmux and wait for its inbox socket.
 
     Returns the new session once it is reachable. The session is left running and
-    detached, so it can be attached to later and messaged again.
+    detached, so it can be attached to later and messaged again. The wait is
+    generous because a session start runs hooks and orientation before binding.
     """
     tmux_name = f"sonner-{repo.name}"
+    if subprocess.run(["tmux", "has-session", "-t", tmux_name], capture_output=True).returncode == 0:
+        tmux_name = f"{tmux_name}-{os.getpid()}"  # earlier ring left its window open
     before = {s.socket for s in live_sessions()}
 
     subprocess.run(
