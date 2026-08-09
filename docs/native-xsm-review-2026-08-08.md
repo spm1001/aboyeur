@@ -145,3 +145,11 @@ infra-92               954309  /home/modha/repos/spm1001/infra
 
 The `/proc` trick remains a true fact about this estate and is no longer how sonner works.
 
+## Addendum 2026-08-09: Vertex sessions are deaf, not dead
+
+The provider gap, measured on a live specimen (Sameer pointed at a `[1m]` session in tmux window 4). A Vertex-billed session (`CLAUDE_CODE_USE_VERTEX=1`, pid 88204, working in mise-en-space) writes a **full registry record** — name `mise-en-space-b9`, cwd, tmux coordinates, live `status: busy` — but the `messagingSocketPath` field is **absent**, and no socket is bound anywhere. CC itself knows the session has no inbox.
+
+Consequences: Vertex sessions are invisible to `ListAgents`, unreachable by `SendMessage` and sonner, and cannot send either — the mesh simply doesn't exist for them, exactly as the availability docs imply for third-party providers. For the estate: **MIT work sessions billed via Vertex cannot be rung natively.** The discriminator for tooling: record-without-socket-field + live pid = live-but-deaf; record-with-socket-path whose socket is gone = dead. sonner currently reports a deaf session's repo as empty, which would let a spawning ring plant a sibling beside a live busy session — tracked as son-nukuzi.
+
+Also learned here: the registry record is richer than first documented — it carries `tmux` coordinates, `status` (busy/idle) and `updatedAt`, which is presumably what feeds the roster's idle/busy column.
+
