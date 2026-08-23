@@ -9,3 +9,6 @@ node_modules/
 dist/
 tools/mesh
 .env
+
+# Heartbeat native-loop reports
+.heartbeat/
