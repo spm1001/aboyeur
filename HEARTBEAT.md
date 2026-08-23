@@ -64,7 +64,7 @@ directory if needed; it is gitignored). One line per check, timestamp makes each
 ```
 HEARTBEAT 2026-03-15T17:00:00Z (session <first8-of-session-id>)
   bons: OK (3 outcomes active, last completion 2h ago)
-  loops: OK (2 durable tasks, none near expiry)
+  loops: OK (2 tasks armed, none near expiry)
   email: WARN (2 unread older than 2h)
   sessions: OK (3 live, 1 stale record)
   rearm: OK (task present, ~5 days left)
