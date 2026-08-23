@@ -63,7 +63,7 @@ bon work <action-id>
 | Standalone next action | One-shot: trigger → single Claude → done |
 | Project (multi-step) | Sequence of peer sessions coordinated via bons |
 | Areas of focus / goals | Bon outcomes |
-| Weekly review | HEARTBEAT cron trigger |
+| Weekly review | HEARTBEAT native loop (`HEARTBEAT.md` on a CronCreate task — no daemon) |
 
 ### Key Files
 
@@ -74,7 +74,7 @@ bon work <action-id>
 | `src/trigger-loop.ts` | Polling loop that drains the trigger queue | Medium |
 | `src/context-queue.ts` | Per-context FIFO with concurrency limits and lane policies | High — prevents runaway spawning |
 | `src/router.ts` | Trigger → SpawnAgentOptions resolver (session naming, prompt loading) | High — routing brain |
-| `src/trigger-cron.ts` | Interval-based cron triggers (HEARTBEAT) | Medium |
+| `src/trigger-cron.ts` | Interval-based cron triggers — no consumers since the HEARTBEAT port (aby-gonida); deletion tracked as aby-cazete | Medium |
 | `src/daemon.ts` | Wires trigger loop → context queue → spawn (with mock injection for tests) | High — integration point |
 | `src/main.ts` | Daemon entry point — wires router, cron, shutdown handlers | High — the executable |
 | `src/conductor-bridge.ts` | WebSocket bridge to Anthropic's conductor mesh — ConductorBridge class (transport layer, used by conductor-channel.ts) | High — mesh infrastructure |
@@ -89,7 +89,7 @@ bon work <action-id>
 | `shared/prompts/worker-open.md` | Worker instructions | Medium |
 | `shared/prompts/legacy/mesh-awareness.md` | Retired sidecar-era mesh instructions — replaced by conductor-channel.ts instructions field | Low |
 | `service/aboyeur-daemon.service` | Systemd user unit for hezza | Medium |
-| `HEARTBEAT.md` | Periodic health check checklist | Low |
+| `HEARTBEAT.md` | Self-contained health-check prompt for a native CronCreate loop (ported off the daemon cron 2026-08-24, aby-gonida) | Low |
 
 ### Mesh Integration (validated)
 

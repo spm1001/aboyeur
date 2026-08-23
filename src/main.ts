@@ -15,7 +15,6 @@
 
 import { startDaemon } from "./daemon.js";
 import { resolveSpawn } from "./router.js";
-import { startCronTrigger } from "./trigger-cron.js";
 import { join, dirname } from "node:path";
 import { homedir } from "node:os";
 import { mkdirSync } from "node:fs";
@@ -56,28 +55,14 @@ const daemon = startDaemon({
   },
 });
 
-// --- Cron triggers ---
-
-const THIRTY_MINUTES = 30 * 60 * 1000;
-
-const stopCron = startCronTrigger({
-  db: daemon.db,
-  schedules: [
-    {
-      name: "heartbeat",
-      intervalMs: THIRTY_MINUTES,
-      payload: JSON.stringify({ schedule: "heartbeat", checklist: "HEARTBEAT.md" }),
-    },
-  ],
-});
-
-console.log(`[aboyeur-daemon] HEARTBEAT cron: every ${THIRTY_MINUTES / 60_000}m`);
+// NOTE: The HEARTBEAT cron schedule that used to be wired here now rides a native
+// CronCreate loop — see HEARTBEAT.md. trigger-cron.ts has no consumers left;
+// its deletion is tracked as aby-cazete.
 
 // --- Graceful shutdown ---
 
 function shutdown(signal: string) {
   console.log(`[aboyeur-daemon] Received ${signal}, shutting down...`);
-  stopCron();
   daemon.stop();
   console.log(`[aboyeur-daemon] Stopped`);
   process.exit(0);

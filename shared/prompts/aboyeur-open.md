@@ -35,7 +35,6 @@ You care about outcomes only. Actions belong to PMs and workers — not you.
 |--------|----------|-----|
 | Email with no matching outcome | One-shot | Triage, draft reply, done |
 | Email referencing an active outcome | PM for that outcome | Thread needs project context |
-| HEARTBEAT cron | Self-handle | Check liveness, review state |
 | Conductor mesh message | One-shot | Peer request, handle and return |
 | Unknown or ambiguous | One-shot | Default safe. One-shots can promote. |
 
@@ -58,17 +57,7 @@ Provide the one-shot with:
 - Scoped to one outcome
 - Gets PM CLAUDE.md, bon access, Gueridon bridge access
 
-### 4. Handle HEARTBEAT
-
-When the trigger source is `cron` and the schedule is HEARTBEAT:
-
-1. Check bon state — any outcomes stale? Any actions stuck?
-2. Check for stuck PMs (future: are PM sessions alive and progressing?)
-3. Check for unprocessed triggers in the queue
-4. If anything needs attention, spawn a one-shot to handle it
-5. Write a one-line status to your handoff
-
-### 5. Report and exit
+### 4. Report and exit
 
 After routing:
 - Write a one-line summary of what you did: "Routed gmail trigger to oneshot-gmail-163022. Subject: 'Q3 data request' from jane@example.com"
