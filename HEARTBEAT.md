@@ -7,11 +7,18 @@ from this checklist (and if a future edit adds one: identical-text messages are 
 deduplicated by the harness, so any message must carry the timestamp — see
 `docs/native-xsm-review-2026-08-08.md` finding 7).
 
-**Scheduling (the re-arming story).** This checklist rides a durable CronCreate task —
+**Scheduling (the re-arming story).** This checklist rides a CronCreate task —
 cron `9,39 * * * *`, prompt `Read /home/modha/repos/spm1001/aboyeur/HEARTBEAT.md and follow it.`,
-`durable: true` — persisted in `~/.claude/scheduled_tasks.json`. Two known limits: durable
-recurring tasks auto-expire after 7 days, and fires land only while an interactive session is
-running and idle at the REPL. Check 5 below is what keeps it alive across the expiry.
+`durable: true`. Measured on CC 2.1.241 (2026-08-24, aby-gonida): `durable` is currently a
+documented no-op — the schema says "durable persistence is not available. All jobs are
+session-only", `~/.claude/scheduled_tasks.json` stays empty, and the task lives in the memory
+of live sessions only. Keep passing `durable: true` anyway, so persistence returns for free if
+the platform restores it. Three lifetime limits: the task dies with its carrier session,
+recurring tasks auto-expire after 7 days (one final fire, then deleted), and fires land only
+while an interactive session is running and idle at the REPL. So the heartbeat rides a live
+interactive carrier session (tmux); if stanzas stop appearing in the log, any interactive
+session becomes the new carrier by running the CronCreate above and staying idle — the
+despatch-box loop session (`~/.claude/loop.md`) is the natural re-armer.
 
 ## Checks
 
@@ -26,9 +33,10 @@ From `/home/modha/repos/spm1001/aboyeur`, run `bon list --json`.
 If the bon CLI errors (e.g. Dolt server down), that is itself a `WARN` with the error text.
 
 ### 2. Loop substrate (was: trigger queue)
-Read `~/.claude/scheduled_tasks.json`.
-- How many durable tasks exist? Any recurring task inside ~24h of its 7-day auto-expiry?
-- Is the file missing or empty while loops are believed armed? That is a `WARN`.
+Use CronList — on this build it is ground truth (`~/.claude/scheduled_tasks.json` staying
+empty is expected while durable persistence is unavailable; do not WARN on that alone).
+- How many tasks are armed? Any recurring task inside ~24h of its 7-day auto-expiry?
+- CronList empty while loops are believed armed is a `WARN`.
 
 ### 3. Unprocessed email
 Via mise (read-only search only): any unread email older than 2 hours in the ITV inbox?
@@ -42,10 +50,11 @@ stale records. A record with no `messagingSocketPath` and a live pid is a live-b
 (Vertex) session, not a fault.
 
 ### 5. Re-arm self
-Find this heartbeat's own task in `~/.claude/scheduled_tasks.json` (prompt mentions
-HEARTBEAT.md). If absent, or expiring within 24h, re-create it with CronCreate using the
-scheduling block above, and say so in the stanza. If you cannot (no CronCreate tool here),
-report `FAIL (cannot re-arm)` — that line is the alarm.
+Find this heartbeat's own task in CronList (prompt mentions HEARTBEAT.md). If absent, or
+expiring within 24h, re-create it with CronCreate using the scheduling block above, and say
+so in the stanza. Absence from `~/.claude/scheduled_tasks.json` is expected on this build,
+not an alarm. If you cannot re-arm (no CronCreate tool here), report `FAIL (cannot re-arm)` —
+that line is the alarm.
 
 ## Report
 
