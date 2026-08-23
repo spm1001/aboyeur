@@ -8,6 +8,8 @@ A **wave** is a batch of parallel, unattended work: an orchestrating session tak
 - **Adversarial verification caught every drift**, at roughly a third of total spend. It is the honesty layer, never optional — without it the inflations enter the record verbatim.
 - **Briefs on disk before launch** give verifiers an independent spec (checking an executor against its own narrative only proves self-agreement) and allow mid-run fact injection.
 - **Boards move under fleets.** Freshness-gate every dispatch at the moment of use; a gate turned one mid-wave collision into a recorded divergence. The sharper lesson landed five days later: on 2026-08-22, just two well-behaved concurrent writers on one Dolt board silently lost seven rows (bon-resena carries the forensics). Parallel lanes are a measured write-concurrency risk, not just an attention cost.
+- **The orchestrator logs dropped items explicitly — never filters them silently.** A dispatch list that quietly loses a line reads as "covered everything" when it didn't; state every drop and its reason in the run record.
+- **Retry chains leave half-written worlds.** A killed or errored attempt may have landed part of its work (files written, commits pushed, board rows moved); the surviving attempt must discover and absorb that state rather than assume a clean slate (carte-hamuku carries the observed case — phantom interrupts mid-wave, self-healed via retries).
 
 ## When to wave, when to loop
 
@@ -25,6 +27,28 @@ The wave keeps a named niche: **parallel read work** — research sweeps, audits
 > - STOP-GATES: only those your item brief names. Everything else in scope you complete; if blocked, deliver the largest clean subset with the edge named — a bounded partial beats a forced complete.
 
 Why the phrasings matter: constraints stated **by mechanism** ("notes-sync owns git *writes*"; "a write from you desynchronises another session's accounting") leave no letter/spirit edge for a reasoning agent to slip through, where bare prohibitions get benignly reasoned around. This was a designed property, and it held across all eight items.
+
+## Per-item dispatch brief — the template
+
+One file per item, written to a run directory before launch (e.g. `~/scratch/<wave-name>/briefs/<item-id>.md` — and rescue anything durable out of scratch when the wave lands). Shape, from the eight worked examples:
+
+```markdown
+# Dispatch: <one-line task name> (<adjudication provenance, if any>)
+Read COMMON.md beside this file first; it binds.
+Board: <absolute repo path> (bon show <ID> — READ ONLY; <where the authoritative context sits, e.g. "the ruling is in its --how tail">).
+
+THE TASK: <what to do, concretely — paths, commands, the deliverable. Constraints
+phrased by mechanism, not prohibition.>
+
+STOP-GATES: <the specific conditions requiring a halt, or "none beyond COMMON.md">.
+
+EVIDENCE FILE: <run-dir>/evidence/<item-id>.md — keep it current as you work.
+
+DONE MEANS: <verifiable criteria the sceptic will check against the world,
+not against your summary.>
+```
+
+The sceptic's dispatch is one line by comparison: the item's brief path, the executor's evidence path, and the instruction to **refute** — re-run the checks against the world, compare claims to measured counts, and report drift before endorsement.
 
 ## Pointers
 
