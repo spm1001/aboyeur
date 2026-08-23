@@ -32,7 +32,8 @@ Read `~/.claude/scheduled_tasks.json`.
 
 ### 3. Unprocessed email
 Via mise (read-only search only): any unread email older than 2 hours in the ITV inbox?
-If mise tools are absent in this session, `SKIP (no mise)`.
+If mise tools are absent in this session, `SKIP (no mise)`. Report-only — email belongs to
+Sameer and the inbox-triage tooling, so a WARN here goes in the stanza, never in a bon.
 
 ### 4. Session fleet (was: daemon health)
 Read `~/.claude/sessions/*.json`. For each record, the pid is live (`kill -0`) or the record is
@@ -62,7 +63,7 @@ HEARTBEAT 2026-03-15T17:00:00Z (session <first8-of-session-id>)
 
 ## Escalation
 
-For any `WARN` or `FAIL`: check the aboyeur board for an open item already covering it
+For any `WARN` or `FAIL` on checks 1, 2, 4 or 5: check the aboyeur board for an open item already covering it
 (`bon list --json`, grep the titles); if none, file one standalone action on the board with
 provenance in `--why` ("Filed by HEARTBEAT fire <timestamp>"). Never fix, never spawn, never
 message — the bon is the escalation. An all-OK stanza is a complete, correct run.
