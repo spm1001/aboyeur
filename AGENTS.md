@@ -2,7 +2,7 @@
 
 ## What this is
 
-Session orchestrator that alternates worker and reflector Claude sessions. See README.md for architecture.
+Session orchestrator that alternates worker and reflector Claude sessions. See README.md for architecture — and note the 2026-08-24 direction: the cycle now runs on Claude Code's native primitives (`docs/native-loop-map-2026-08-24.md`); `conductor.sh` below is the pre-native reference implementation.
 
 ## Code style
 
@@ -30,7 +30,7 @@ If the reflector is too polite, the whole system is an expensive rubber stamp. W
 
 ## Testing
 
-No automated tests yet. Test by running `conductor.sh` on a real project with `.bon/` and observing the worker→reflector→worker cycle.
+`npm test` runs 13 node tests (spawn-agent, mesh-capability) and 10 bun channel tests. The conductor pattern itself is tested by running a worker→reflector cycle and reading the handoffs (native form: aby-dujato's scratch-repo prototype).
 
 ## Dependencies
 

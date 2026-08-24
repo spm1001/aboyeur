@@ -75,12 +75,10 @@ bon work <action-id>
 | `src/mesh-capability.ts` | `detectMeshCapability()` — can this session surface inbound, or is it send-only? Pure function over (env, parent argv); statusline.sh mirrors it in bash | High — gates what we advertise on the wire |
 | `src/index.ts` | Barrel export (spawnAgent only, since aby-cazete) | Low |
 | `docs/architecture-decisions.md` | Design decisions and rejected alternatives | High — prevents re-derivation |
-| `shared/prompts/aboyeur-open.md` | Aboyeur instructions (routing, session naming) | High — the brain |
-| `shared/prompts/email-triage.md` | One-shot email handling (classify, draft, escalate) | High — email quality |
 | `shared/prompts/reflector-open.md` | Reflector instructions (code/work review) | High — sycophancy risk if weakened |
 | `shared/prompts/planning-reflector.md` | Planning reflector (architecture review) | High — catches assumption errors |
 | `shared/prompts/worker-open.md` | Worker instructions | Medium |
-| `shared/prompts/legacy/mesh-awareness.md` | Retired sidecar-era mesh instructions — replaced by conductor-channel.ts instructions field | Low |
+| `shared/prompts/legacy/` | Retired prompts: sidecar-era mesh-awareness, daemon-era aboyeur-open + email-triage (retired with the trigger path, aby-cazete) | Low |
 | `HEARTBEAT.md` | Self-contained health-check prompt for a native CronCreate loop (ported off the daemon cron 2026-08-24, aby-gonida) | Low |
 
 ### Mesh Integration (validated)
@@ -123,7 +121,7 @@ Bun runs the TypeScript directly — no build step (Phase 3, aby-bosuwa, 2026-07
 | Reflector (explicit) | `cc-reflector-{action-id}-{seq}` | `MESH_AGENT_ID` env var |
 | Spawned reviewer | `cc-reviewer-{timestamp}` | `MESH_AGENT_ID` env var |
 
-Auto-derived IDs are stable across resume (same session → same UUID) and **collision-free** for two sessions in the same cwd — each reads its own `CLAUDE_CODE_SESSION_ID` rather than the busiest JSONL (fixed 2026-07-15, aby-pupaso). Explicit `MESH_AGENT_ID` still overrides auto-derivation for daemon-spawned sessions (PM/worker/reviewer naming).
+Auto-derived IDs are stable across resume (same session → same UUID) and **collision-free** for two sessions in the same cwd — each reads its own `CLAUDE_CODE_SESSION_ID` rather than the busiest JSONL (fixed 2026-07-15, aby-pupaso). Explicit `MESH_AGENT_ID` still overrides auto-derivation for spawnAgent-spawned sessions (PM/worker/reviewer naming).
 
 **Peer removal:** `conductor_agent_offline`, `conductor_agent_expired`, and `conductor_agent_reset` are all handled — any of them removes the peer from the map. `conductor_agent_offline` is a no-op in the Office bundle (empty handler) but we handle it anyway for completeness.
 
