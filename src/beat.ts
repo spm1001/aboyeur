@@ -12,7 +12,7 @@
 
 import { spawnAgent, type SpawnAgentOptions } from "./spawn-agent.js";
 import { readFileSync, existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
-import { execSync } from "node:child_process";
+import { execFileSync, execSync } from "node:child_process";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -83,7 +83,9 @@ function die(msg: string): never {
 
 function bonListJson(): BonState {
   try {
-    const output = execSync("bon list --json", { encoding: "utf-8", timeout: 10_000 });
+    // execFileSync, not execSync: no /bin/sh interposed, so bon's invocation
+    // log stamps caller=robot/aboyeur (via process.title) instead of robot/sh.
+    const output = execFileSync("bon", ["list", "--json"], { encoding: "utf-8", timeout: 10_000 });
     return JSON.parse(output);
   } catch (err) {
     die(`Failed to read bon state. Is bon installed? Error: ${err}`);
@@ -314,7 +316,7 @@ async function runOneBeat(
 
     // Mark action done in bon
     try {
-      execSync(`bon done ${action.id}`, { encoding: "utf-8", timeout: 10_000 });
+      execFileSync("bon", ["done", action.id], { encoding: "utf-8", timeout: 10_000 });
       log(`Marked ${action.id} done in bon.`);
     } catch (err) {
       log(`Warning: failed to mark bon done: ${err}`);
@@ -418,6 +420,14 @@ Examples:
 }
 
 async function main(): Promise<void> {
+  // Name the process so instrumented estate CLIs (bon et al., which carry the
+  // harness-ergonomics invocation-log shim) attribute our child invocations
+  // as caller=robot/aboyeur — the shim reads the parent's /proc comm, and
+  // node's process.title sets it (probed 2026-08-24, erg-konewa). Without
+  // this, a plain `node beat.js` stamps as robot/node (or robot/sh where a
+  // shell is interposed), and aboyeur's robot calls vanish into the noise.
+  process.title = "aboyeur";
+
   const args = process.argv.slice(2);
 
   if (args.length === 0 || args.includes("--help") || args.includes("-h")) {
@@ -445,7 +455,7 @@ async function main(): Promise<void> {
 
   // Verify bon is available
   try {
-    execSync("bon --version", { encoding: "utf-8", stdio: "pipe" });
+    execFileSync("bon", ["--version"], { encoding: "utf-8", stdio: "pipe" });
   } catch {
     die("bon CLI not found. Install bon first.");
   }

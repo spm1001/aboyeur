@@ -144,6 +144,31 @@ the **`hublot`** skill (trousse) to drive and observe a real interactive session
 | Orphan process management | `~/Repos/gueridon/server/orphan.ts` |
 | Event parsing | `~/Repos/gueridon/server/state-builder.ts` |
 
+## Invocation-log attribution (erg-konewa, 2026-08-24)
+
+The estate's invocation-log shim (spm1001/harness-ergonomics, `shim/invocation_log.py`)
+stamps every instrumented CLI call — bon, passe, accomplis, deglacer, sonner, glaneur —
+with `caller=robot` + the parent process's `/proc` comm when no CC env and no tty is
+present. Aboyeur itself has **nothing to vendor the shim into**: it is not an installed
+CLI — post-cazete there is no daemon, no console script, no Python; the orchestrator is
+a Claude session (whose own CLI calls stamp `model` via env) plus two dev-run surfaces.
+Attribution of aboyeur-driven robot calls therefore arrives via the *adopted tools'*
+parent-comm stamp, and both surfaces are now covered:
+
+- **conductor.sh** needs nothing: a shebang script's children see the script name as
+  parent comm (probed 2026-08-24 — comm truncates at 15 chars; "conductor.sh" fits),
+  so its `bon list` calls already stamp `robot/conductor.sh`.
+- **beat.ts** sets `process.title = "aboyeur"` (node's title setter writes comm) and
+  calls bon via `execFileSync` — `execSync` interposes `/bin/sh -c`, which makes bon's
+  parent "sh" and destroys the attribution. Keep both halves if you touch these calls:
+  title without direct spawn stamps `robot/sh`; direct spawn without title stamps
+  `robot/node`. Verified against the real instrumented bon:
+  `{"caller":"robot","caller_detail":"aboyeur"}`.
+
+If aboyeur ever regrows an installed CLI (a daemon revival), that is the moment it
+adopts the shim properly — vendor + conformance line in harness-ergonomics, per that
+repo's CLAUDE.md checklist.
+
 ## Conventions
 
 - **TypeScript** for all new code
