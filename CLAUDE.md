@@ -1,6 +1,8 @@
 # Aboyeur — Project Context
 
-Multi-session orchestrator, now riding CC-native loop primitives (the revival direction, aby-degeki). The hand-rolled scheduling column — SQLite trigger queue, polling loops, cron poller, daemon entry point, systemd unit — was **deleted 2026-08-24 (aby-cazete)**; none of it was ever deployed. What orchestrates today: an orchestrating session's own control flow (the estate's `~/.claude/loop.md` rhythm) spawning fresh-context worker/reflector roles via the Agent tool, **handoff files as the protocol between sessions**, bons as the inbox, and CronCreate ticks for cadence. The responsibility-by-responsibility port is `docs/native-loop-map-2026-08-24.md`. Claudes communicate as **peers** via the Anthropic conductor mesh (`<channel>` tags) — no hierarchy, no management layer.
+Multi-session orchestrator, now riding CC-native loop primitives (the revival direction, aby-degeki). The hand-rolled scheduling column — SQLite trigger queue, polling loops, cron poller, daemon entry point, systemd unit — was **deleted 2026-08-24 (aby-cazete)**; none of it was ever deployed. What orchestrates today: an orchestrating session's own control flow (the estate's `~/.claude/loop.md` rhythm) spawning fresh-context worker/reflector roles via the Agent tool, **handoff files as the protocol between sessions**, bons as the inbox, and CronCreate ticks for cadence. The responsibility-by-responsibility port is `docs/native-loop-map-2026-08-24.md`. Claudes communicate as **peers** — no hierarchy, no management layer — over handoff files, bons, and `sonner` for anything that cannot wait for the next session start.
+
+**Aboyeur is one thing now, not two.** It was an orchestrator *and* a mesh; the mesh was deleted on 2026-08-24 (see "The mesh — REMOVED" below). What remains is orchestration on CC-native primitives, which is a sharpening rather than a loss — but it means more than half this repo's source is in the history rather than the tree, and several board items still speak as if the mesh were live. `aby-nedora` is adjudicating those.
 
 Read `docs/architecture-decisions.md` for the pre-native design rationale (historical since 2026-08-24).
 
@@ -14,11 +16,10 @@ Orchestrating session (loop.md rhythm; no daemon, no SQLite)
   ├── cadence: CronCreate ticks (session-scoped — see the map's residue list)
   └── health: HEARTBEAT.md as a native scheduled-task prompt (aby-gonida)
 
-Claudes (peers on the conductor mesh)
-  ├── peer reviewer: read code, send observations via mesh, exit
-  ├── conversational: two Claudes discuss a design decision
+Claudes (peers — same machine, no hierarchy)
+  ├── peer reviewer: read code, report observations, exit
   ├── beat worker: autonomous code task (beat.ts pattern)
-  └── all coordinate via bons and mesh — no management layer
+  └── all coordinate via bons, handoff files, and sonner
 ```
 
 ### Communication — Transport Shapes Dynamics
@@ -27,11 +28,13 @@ How a message arrives determines how Claude treats it:
 
 | Channel | Arrives as | Dynamic |
 |---------|-----------|---------|
-| Conductor mesh (Channels MCP) | `<channel>` tag | Peer — honest exchange, no ranking |
+| `sonner` | Peer message on the inbox socket | Peer — honest exchange, no ranking |
 | Guéridon stdin | User message | Authority — trained deference |
 | .inbox/ file | Read during /open | Neutral — evaluative |
 
-Use mesh for peer-to-peer, stdin for authority/direction. Don't mix them.
+Use sonner for peer-to-peer, stdin for authority/direction. Don't mix them.
+
+**This table is the durable idea here, and it survived the transport underneath it.** The conductor mesh delivered peer messages as `<channel>` tags; sonner delivers them over a unix socket. Different wire, same dynamic — which is exactly why sonner refuses to pass a message as a spawned session's *prompt*: that would move it into row two and make a peer read as the user.
 
 ### Session Naming Convention
 
@@ -70,9 +73,7 @@ bon work <action-id>
 | File | Purpose | Sensitivity |
 |------|---------|-------------|
 | `src/spawn-agent.ts` | spawnAgent() — spawn claude, collect output, resume sessions | High — beat.ts's spawner |
-| `src/conductor-bridge.ts` | WebSocket bridge to Anthropic's conductor mesh — ConductorBridge class (transport layer, used by conductor-channel.ts) | High — mesh infrastructure |
-| `src/conductor-channel.ts` | MCP Channels server wrapping ConductorBridge — CC loads via `--dangerously-load-development-channels server:conductor-channel` | High — mesh integration |
-| `src/mesh-capability.ts` | `detectMeshCapability()` — can this session surface inbound, or is it send-only? Pure function over (env, parent argv); statusline.sh mirrors it in bash | High — gates what we advertise on the wire |
+| `src/beat.ts` | The beat pattern — autonomous code task loop over spawnAgent | High |
 | `src/index.ts` | Barrel export (spawnAgent only, since aby-cazete) | Low |
 | `docs/architecture-decisions.md` | Design decisions and rejected alternatives | High — prevents re-derivation |
 | `shared/prompts/reflector-open.md` | Reflector instructions (code/work review) | High — sycophancy risk if weakened |
@@ -81,65 +82,52 @@ bon work <action-id>
 | `shared/prompts/legacy/` | Retired prompts: sidecar-era mesh-awareness, daemon-era aboyeur-open + email-triage (retired with the trigger path, aby-cazete) | Low |
 | `HEARTBEAT.md` | Self-contained health-check prompt for a native CronCreate loop (ported off the daemon cron 2026-08-24, aby-gonida) | Low |
 
-### Mesh Integration (validated)
+### The mesh — REMOVED 2026-08-24 (son-pilalu / aby-nedora)
 
-CC sessions join the Anthropic conductor mesh (`bridge.claudeusercontent.com`) via a Channels MCP server. The Channels API (CC v2.1.80+, research preview) lets an MCP server push events directly into a CC session as `<channel>` tags — no PTY injection, no file polling.
+Aboyeur used to carry a second, separate limb: a WebSocket bridge to Anthropic's
+conductor mesh, shipped to the world as the **sonnette** plugin. **All of it is
+gone** — `conductor-bridge.ts`, `conductor-channel.ts`, `mesh-capability.ts`,
+`mesh-id.ts`, their tests, the `sonnette/` bundle, `.mcp.json`,
+the `sonnette-bundle-fresh` CI job and `docs/MESH-SETUP.md`. Deleted in `4f41e80`;
+`git show 4f41e80^` has every line of it.
 
-**How it works:** `conductor-channel.ts` wraps `ConductorBridge` as an MCP Channels server. CC is started with `--dangerously-load-development-channels server:conductor-channel`. Incoming mesh messages arrive as `<channel source="conductor-channel">` tags. Claude sends via `send_message` MCP tool, discovers peers via `mesh_peers`.
+> **`conductor.sh` is NOT part of that and was never mesh code** — it is the
+> worker/reflector loop this repo is named for, and it contains zero mesh
+> references. It was deleted by mistake in `4f41e80` on a name collision
+> ("conductor.sh" vs "conductor-channel.ts") and restored immediately after.
+> If you are pruning here, that shared word is the tripwire: the *channel* is
+> the mesh, the *shell script* is the orchestrator.
 
-**Env vars:** `MESH_AGENT_ID` (optional — explicit mesh identity override) and `MESH_ROLE` (aboyeur|pm|worker|user — affects interrupt semantics in instructions). When `MESH_AGENT_ID` is absent, auto-derived as `cc-{folder}-{first 8 chars of session UUID}`, where the UUID is read from `CLAUDE_CODE_SESSION_ID` (CC sets it at MCP-spawn time). This is race-free and stable across resume, so two sessions in the SAME cwd get **distinct** ids (fixed 2026-07-15, aby-pupaso). *History:* the UUID used to be read from the most-recently-modified JSONL in the project dir, which let a newcomer adopt a busy sibling's UUID and collide — measured 2026-07-14 as 114 supersession events, both sessions knocked offline. Falls back to that JSONL scan only if `CLAUDE_CODE_SESSION_ID` is absent (older CC). `MESH_DISABLED=1` suppresses mesh entirely (safe for subagent inheritance).
+**Why:** Sameer delisted sonnette from the batterie marketplace, then chose deletion
+over freezing. Measured conductor-channel traffic had stopped on 2026-07-19 — five
+weeks dead — and keeping the code meant a CI job policing an artefact nobody ships
+plus a rebuild-the-bundle rule nagging every future edit.
 
-**MCP registration required:** The channel server must be registered in MCP config for the `--dangerously-load-development-channels` flag to find it. `.mcp.json` (canonical) or `settings.json`:
-```json
-{ "mcpServers": { "conductor-channel": { "command": "bun", "args": ["src/conductor-channel.ts"] } } }
-```
-Bun runs the TypeScript directly — no build step (Phase 3, aby-bosuwa, 2026-07-15). `bun` must be on the CC process's PATH or the MCP server ENOENTs silently (MCP fails soft); on tube via a `~/.local/bin/bun` symlink.
+**Peer messaging is `sonner` now** (`spm1001/sonner`), and it is not a mesh: it rings
+a *repo* over a unix socket, spawning a session if none is home. **Cross-machine reach
+went with sonnette and nothing replaces it** — that loss was accepted explicitly
+(Sameer, 2026-08-24: *"I think losing cross machine is OK"*). For one host to reach
+another: a file both can see, or the board.
 
-**Shipped as a plugin (aby-zufefu, 2026-07-19):** conductor-channel now also ships as **`sonnette`** in the public **`batterie`** marketplace (`claude plugin install sonnette@batterie`). The plugin carries a committed single-file bundle (`sonnette/conductor-channel.js`, `npm run build:sonnette`) + a bun-locating wrapper (`sonnette/run.sh`), because the batterie assembler vendors source without `node_modules`. **After editing any `src/` mesh code, rebuild the bundle and commit it** — aboyeur CI (`sonnette-bundle-fresh`) diffs it against a pinned-bun rebuild and goes red on drift. Plugin-loaded tools are namespaced `mcp__plugin_sonnette_sonnette__{send_message,mesh_peers}` (not `mcp__conductor-channel__*`).
+**What this means for the code that stayed.** The excision was clean — `index.ts`,
+`beat.ts` and `spawn-agent.ts` imported no mesh module. `spawnAgent()` lost its
+`meshAgentId` / `meshRole` options and the channel flag they added. `MESH_DISABLED=1`
+is still set unconditionally on spawn, deliberately: nothing here reads it any more,
+but an older conductor-channel could still be installed somewhere on the estate, and
+a spawned session inheriting a live one would mint an unwanted identity.
 
-**Mesh-at-birth — and sonnette is DISABLED STANDING since 2026-07-26 (bds-micozi).** The estate's rule is now all-or-nothing: `enabledPlugins.sonnette@batterie=false` sits in `~/.claude/settings.json`, so a bare `claude` has **no sonnette tools at all**, and `claudem` re-enables it per launch via `--settings '{"enabledPlugins":{"sonnette@batterie":true}}'` alongside `--dangerously-load-development-channels plugin:sonnette@batterie`. Rationale: a flagless session used to hold a live registration while inbound-deaf, and two handoff messages were lost to exactly that. Measured mechanism: **the channels flag only rides an ENABLED plugin** — uninstalled or disabled means no tools even when flagged. `-m` on `claudev`/`claudefv` now **refuses**, because Vertex sessions cannot bind channels at all ("Channels are not available on third-party providers") and enabling there would mint registered-but-deaf deliberately. One trust dialog per launch. Dialog-free-everywhere (allowlist) is **externally blocked** — `/etc/claude-code/managed-settings.json` `allowedChannelPlugins` is server-shadowed on Teams (measured dead 2026-07-19, aby-lesefu), waiting on Anthropic (#58152 / a Teams console allowlist field).
+**Do not rebuild this from the history without reading `aby-nedora` first.** Several
+board items still describe the mesh as live; they are being adjudicated, not honoured.
 
-**This standing state is an INTERIM, not the destination.** The 2026-07-26 step-back session decided the opposite philosophy — decouple membership from bidirectionality and make capability *honest* rather than removing it — and Sameer adjudicated the two as a sequence: micozi is the tourniquet, `aby-jepezu` is the surgery. `aby-werazu` flips sonnette back on standing once `aby-sahifi` ships honest capability. Read `.bon/understanding.md` §transport decision before changing anything here.
-
-> **OVERTAKEN 2026-08-24 — sonnette is DELISTED, and this paragraph's destination no longer exists.** Sameer retired sonnette from the batterie marketplace (`son-pilalu`; marketplace commit `87def57` removed it from `assemble.sh`'s PLUGINS map, from `marketplace.json`, and deleted `plugins/sonnette/`). It is uninstalled on tube and the Mac. **`sonner` — a separate tool in `spm1001/sonner` — is the estate's peer messaging now**, and it is not a mesh: it rings a *repo* over a unix socket, so it is machine-local by construction.
->
-> **The cross-machine capability is therefore gone, and that loss was accepted explicitly** (Sameer, 2026-08-24: *"I think losing cross machine is OK"*). The evidence behind the call: measured conductor-channel MCP traffic stopped 2026-07-19 — five weeks dead before the delisting. If one host must reach another now, use a file both can see, or the board.
->
-> **What this repo keeps:** all of it — `src/`, the `sonnette/` bundle, and the `sonnette-bundle-fresh` CI guard. Nothing was deleted here. Treat the bundle as **deliberately undistributed**: the missing marketplace entry is the decision, not a bug, so do not "fix" it by re-registering.
->
-> **What is now void, and is aboyeur's to adjudicate rather than mine:** `aby-werazu` (re-enable sonnette standing) has no plugin left to re-enable, which in turn removes the thing `aby-sahifi` was unblocking *for*, and weakens the `aby-jepezu` framing above — honest capability advertisement matters less for a transport nothing installs. The `bds-micozi` all-or-nothing pattern is likewise moot: a bare `claude` gets no sonnette tools because there is no sonnette, not because it is disabled. Tracked as **`aby-fefife`**. Until that is worked, read everything above this box as history.
-
-**Landmine — two servers in aboyeur's OWN cwd (now claudem-only):** this repo is the only place with a project `.mcp.json` conductor server, so a session here that *also* has the plugin active loads BOTH (project `bun src/…` + plugin), deriving the same agentId. Since micozi's standing-disable that means **`claudem` in this cwd**, not every session. They no longer flap (aby-suwawo, 1.16.1: a shared `owner.pid` makes the younger yield permanently to the live older sibling — age, not liveness, so the aby-tarafo restart-survivor still revives), but two servers still run with one yielded, and both still announce their birth to the estate (`aby-gukori` moves the yield before `register`). If mesh acts oddly *in aboyeur*, suspect this first; work from another cwd to rule it out. Regression repro: `tests/suwawo-two-process.mjs`.
-
-**Quiet by default (aby-huciza, 2026-07-26, sonnette 1.22.4):** peer join/leave no longer surfaces as `<channel>` tags — presence is *pull* (`mesh_peers`), only real messages and the one-time birth summary *push*. The bridge also emits `peer_online` only on absent→present transitions and `peer_offline` only for known peers, so re-registers update the roster silently. Validated live: a peer joined and left while a flag-born session watched — zero roster tags, message tags intact.
-
-**A session can tell whether it can actually receive (aby-masogo, 2026-07-26):** `src/mesh-capability.ts` → `detectMeshCapability(env, argv)` returns `{canReceive, reason, detail}`, published at `/tmp/conductor-bridge/{agentId}/capability`. `getClientCapabilities()` does **not** discriminate (identical across plain / flagged-Vertex / flagged-Teams once read from `oninitialized`, where it is actually populated) — what does is the parent's argv (exact-token match; the wrappers pass a `--settings` JSON blob) plus `CLAUDE_CODE_ENTRYPOINT` (`cli` interactive vs `sdk-cli` headless) and `CLAUDE_CODE_USE_VERTEX`. Every unknown resolves to send-only by design. **Known gap:** it reads `/proc`, so macOS falsely reports send-only — `aby-wazica`, must fix before `aby-sahifi` consumes the verdict.
-
-**Testing anything interactive:** `claude -p` is a different product surface — inbound tags, dialogs and the statusline do not exist there, so a headless green proves nothing about the TUI. Use the **`hublot`** skill (trousse 1.23.0) to drive and observe a real interactive session.
-
-**spawnAgent() integration:** Pass `meshAgentId` and `meshRole` options — this adds the channel flag to args and sets env vars. Without these options, no mesh — Guéridon behaviour unchanged.
-
-**agentId scheme** (auto-derived when `MESH_AGENT_ID` is not set):
-
-| Session type | Mesh agentId | How assigned |
-|---|---|---|
-| Interactive (auto) | `cc-{folder}-{first8 of session UUID}` e.g. `cc-aboyeur-143b6b6d` | Derived from `CLAUDE_CODE_SESSION_ID` (the session's own uuid) |
-| PM (explicit) | `cc-pm-{outcome-id}` e.g. `cc-pm-aby-kikebu` | `MESH_AGENT_ID` env var |
-| Worker (explicit) | `cc-worker-{action-id}-{seq}` e.g. `cc-worker-aby-sanimu-01` | `MESH_AGENT_ID` env var |
-| Reflector (explicit) | `cc-reflector-{action-id}-{seq}` | `MESH_AGENT_ID` env var |
-| Spawned reviewer | `cc-reviewer-{timestamp}` | `MESH_AGENT_ID` env var |
-
-Auto-derived IDs are stable across resume (same session → same UUID) and **collision-free** for two sessions in the same cwd — each reads its own `CLAUDE_CODE_SESSION_ID` rather than the busiest JSONL (fixed 2026-07-15, aby-pupaso). Explicit `MESH_AGENT_ID` still overrides auto-derivation for spawnAgent-spawned sessions (PM/worker/reviewer naming).
-
-**Peer removal:** `conductor_agent_offline`, `conductor_agent_expired`, and `conductor_agent_reset` are all handled — any of them removes the peer from the map. `conductor_agent_offline` is a no-op in the Office bundle (empty handler) but we handle it anyway for completeness.
-
-**Intel repo:** `~/Repos/claude-in-office` has the full conductor protocol documentation, Office bundle analysis, and timing measurements. Read `docs/CONDUCTOR-PROTOCOL.md` there before working on mesh code — it is the canonical protocol reference.
+**One lesson from that work outlives it, and is not mesh-specific:** `claude -p` is a
+different product surface from an interactive session — inbound tags, dialogs and the
+statusline do not exist there, so a headless green proves nothing about the TUI. Use
+the **`hublot`** skill (trousse) to drive and observe a real interactive session.
 
 ### Reference Implementations (crib from these)
 
 | Pattern | Where to look |
 |---------|---------------|
-| Channels MCP server | `src/conductor-channel.ts` (built) + `https://code.claude.com/docs/en/channels-reference` (CC Channels API docs) |
 | Spawn + env-var stripping | `~/Repos/gueridon/server/bridge.ts:326-345` (THE primary reference) |
 | Session resume logic | `~/Repos/gueridon/server/bridge-logic.ts` (buildCCArgs, resolveSessionForFolder) |
 | Gueridon bridge API | `~/Repos/gueridon/server/bridge.ts` (session lifecycle: spawn, list, kill, events) |
@@ -148,11 +136,9 @@ Auto-derived IDs are stable across resume (same session → same UUID) and **col
 
 ## Conventions
 
-- **TypeScript** for all new code (mesh, spawnAgent)
+- **TypeScript** for all new code
 - **Gueridon's spawn pattern** for session spawning (`claude` CLI + stream-json, via spawnAgent)
 - **Gueridon bridge API** for session lifecycle (spawn, list, kill, events)
-- **Channels MCP** for mesh connectivity (`conductor-channel.ts`, not sidecar)
-- **MESH_AGENT_ID env var** to gate mesh on/off per spawn — absent means no mesh
 - **Max subscription** auth for all agents
 - **Bon `--json`** for structured work state (not markdown parsing)
 - Prompts: direct, concrete instructions over abstract principles
@@ -167,10 +153,12 @@ Auto-derived IDs are stable across resume (same session → same UUID) and **col
 
 ## Testing
 
-`npm test` = 13 node tests (spawn-agent, mesh-capability) + 10 bun channel tests (conductor-channel, bridge supersession, mesh-id seam, send-confirm, deregister timing, quiet roster). The daemon integration suite went with the daemon (aby-cazete, 2026-08-24) — its patterns live on in git history pre-`refactor!: delete the SQLite trigger path`.
+`npm test` = 4 node tests (spawn-agent). It was 13 node + 10 bun until 2026-08-24; the missing 19 were all mesh and went with it (`4f41e80`), which is the honest measure of how much of this repo was the mesh. The daemon integration suite went earlier with the daemon (aby-cazete) — its patterns live on in git history pre-`refactor!: delete the SQLite trigger path`. CI runs `npm test` as of 2026-08-24; before that it only typechecked.
 
 ## Status
 
-Pre-alpha, mid-revival. The SQLite daemon column is deleted (aby-cazete, 2026-08-24; never deployed) and orchestration rides native primitives — HEARTBEAT on a scheduled task (aby-gonida), the worker/reflector cycle proven on Agent-tool control flow (aby-dujato, map in `docs/native-loop-map-2026-08-24.md`). `npm test` = 13 node + 10 bun. Mesh connectivity validated via Channels MCP. Peer review loop proven with live round-trips. Supersession fixed (aby-tarafo); same-id double-server war fixed (aby-suwawo, 1.16.1). **Mesh is shipped for real use:** sonnette in the batterie marketplace (aby-zufefu), mesh-at-birth via `claudem` (aby-pafada), one-shot phone-a-friend via `/consult`. The three-rung capability ladder is mapped in `.bon/understanding.md`.
+Pre-alpha, mid-revival, and **narrower than it was**. Two limbs became one on 2026-08-24: the mesh was deleted outright (`4f41e80`, son-pilalu / aby-nedora) after sonnette was delisted from the batterie marketplace, so what remains is orchestration on CC-native primitives. The SQLite daemon column went the same day (aby-cazete; never deployed), leaving HEARTBEAT on a scheduled task (aby-gonida) and the worker/reflector cycle proven on Agent-tool control flow (aby-dujato, map in `docs/native-loop-map-2026-08-24.md`). `npm test` = 4 node tests, CI green.
 
-**Current focus is `aby-jepezu`** — quiet by default, truthful about capability, observable at a glance. Shipped so far: quiet roster (aby-huciza) and capability self-detection (aby-masogo), both live-validated on a real `claudem` session. Next: **aby-sahifi** (advertise capability honestly at registration, in `mesh_peers`, and at send time) — which unblocks **aby-werazu** (re-enable sonnette standing, reversing the micozi interim) and is gated on **aby-wazica** (the `/proc` portability fix). Then aby-gukori, aby-kisemi, aby-darode, aby-cezihe, aby-lejoso, aby-zawigu. Elsewhere: aby-lezuhu closes the Bun outcome (docs sweep, scope now just `docs/MESH-SETUP.md`), aby-luviwu graduates `/consult` to trousse. `aby-rawupo` has one step left — verify the shipped instructions render in a *fresh* session.
+**The board is mid-adjudication and you should not trust it yet.** Thirteen of fourteen open items were mesh items when the mesh was deleted, including three whole outcomes: `aby-cusera` ("every session born on the mesh") and `aby-jepezu` ("mesh transport quiet, truthful, observable") are dead, and `aby-suloro` ("every Claude can see, consult and wake any other") is **achieved** — by sonner, in another repo, which is a different verdict from abandoned. `aby-nedora` holds the triage. Until it is worked, an open item here is not evidence that its subject exists.
+
+**Worth carrying out of the mesh work:** `aby-sahifi`'s principle, which outlived its transport — *the fault is not that send-only sessions exist, it is that they are indistinguishable from absent ones.* That is now sonner's live problem, measured there as five of eight sessions on tube being deaf, and it moved to `son-nukuzi`.

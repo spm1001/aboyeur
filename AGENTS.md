@@ -30,7 +30,7 @@ If the reflector is too polite, the whole system is an expensive rubber stamp. W
 
 ## Testing
 
-`npm test` runs 13 node tests (spawn-agent, mesh-capability) and 10 bun channel tests. The conductor pattern itself is tested by running a worker→reflector cycle and reading the handoffs (native form: aby-dujato's scratch-repo prototype).
+`npm test` runs 4 node tests (spawn-agent). It was 13 node + 10 bun until 2026-08-24; the mesh and its 19 tests were deleted that day (`4f41e80`). The conductor pattern itself is tested by running a worker→reflector cycle and reading the handoffs (native form: aby-dujato's scratch-repo prototype).
 
 ## Dependencies
 
