@@ -87,9 +87,12 @@ bon work <action-id>
 Aboyeur used to carry a second, separate limb: a WebSocket bridge to Anthropic's
 conductor mesh, shipped to the world as the **sonnette** plugin. **All of it is
 gone** — `conductor-bridge.ts`, `conductor-channel.ts`, `mesh-capability.ts`,
-`mesh-id.ts`, their tests, the `sonnette/` bundle, `.mcp.json`,
-the `sonnette-bundle-fresh` CI job and `docs/MESH-SETUP.md`. Deleted in `4f41e80`;
-`git show 4f41e80^` has every line of it.
+`mesh-id.ts`, their tests, the `sonnette/` bundle, `.mcp.json` and the
+`sonnette-bundle-fresh` CI job. Deleted in `4f41e80`; `git show 4f41e80^` has
+every line of it. **`docs/MESH-SETUP.md` is deliberately KEPT** as a historical
+record, at `aby-dunudo`'s request — its delivery-semantics measurements explain
+why the honesty bar for the successor was set where it was. It carries a header
+saying nothing in it is runnable.
 
 > **`conductor.sh` is NOT part of that and was never mesh code** — it is the
 > worker/reflector loop this repo is named for, and it contains zero mesh
@@ -104,10 +107,17 @@ weeks dead — and keeping the code meant a CI job policing an artefact nobody s
 plus a rebuild-the-bundle rule nagging every future edit.
 
 **Peer messaging is `sonner` now** (`spm1001/sonner`), and it is not a mesh: it rings
-a *repo* over a unix socket, spawning a session if none is home. **Cross-machine reach
-went with sonnette and nothing replaces it** — that loss was accepted explicitly
-(Sameer, 2026-08-24: *"I think losing cross machine is OK"*). For one host to reach
-another: a file both can see, or the board.
+a *repo* over a unix socket, spawning a session if none is home.
+
+**Cross-machine reach is NOT lost — correcting a claim this file briefly carried.**
+sonner is machine-local in *discovery*, which reads like "no cross-machine messaging",
+and on 2026-08-24 a session wrote exactly that here before finding `aby-dunudo`, which
+had recorded the successor on 2026-08-09: you reach another host by running sonner
+there, `ssh <host> sonner <repo> '<msg>'`, demonstrated tube→Mac into a live session
+that day and re-verified over non-interactive ssh on 2026-08-24. What genuinely
+narrowed is *ambient* presence — a remote peer will not appear in a local `--list`,
+and you must know which host to reach. The one capability with no successor at all is
+Office-Claude interop, dropped knowingly. Full ledger: `docs/mesh-retirement-2026-08-24.md`.
 
 **What this means for the code that stayed.** The excision was clean — `index.ts`,
 `beat.ts` and `spawn-agent.ts` imported no mesh module. `spawnAgent()` lost its
