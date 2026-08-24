@@ -34,10 +34,6 @@ export interface SpawnAgentOptions {
   permissionMode?: string;
   /** MCP config path (defaults to ~/.claude/settings.json). */
   mcpConfigPath?: string;
-  /** Mesh agent ID — if set, enables conductor mesh via Channels MCP. */
-  meshAgentId?: string;
-  /** Mesh role — aboyeur | pm | worker | user (default: user). */
-  meshRole?: string;
   /** Abort signal for cancellation. */
   signal?: AbortSignal;
   /**
@@ -133,11 +129,6 @@ function buildArgs(opts: SpawnAgentOptions, sessionId: string): string[] {
     args.push("--max-turns", String(opts.maxTurns));
   }
 
-  // Mesh: load conductor-channel as a CC Channel if agent ID is set
-  if (opts.meshAgentId) {
-    args.push("--dangerously-load-development-channels", "server:conductor-channel");
-  }
-
   // Session resume vs fresh
   if (opts.resume && opts.sessionId) {
     args.push("--resume", sessionId);
@@ -157,15 +148,12 @@ function buildEnv(opts: SpawnAgentOptions): NodeJS.ProcessEnv {
       env[k] = v;
     }
   }
-  const meshEnv: Record<string, string> = {};
-  if (opts.meshAgentId) {
-    meshEnv.MESH_AGENT_ID = opts.meshAgentId;
-    meshEnv.MESH_ROLE = opts.meshRole ?? "user";
-  } else {
-    // Suppress auto-generated mesh identity for daemon-spawned sessions
-    meshEnv.MESH_DISABLED = "1";
-  }
-  return { ...env, ...HEADLESS_ENV, ...meshEnv };
+  // MESH_DISABLED outlives the mesh itself (son-pilalu, 2026-08-24): the code
+  // that read it is deleted, but an OLDER conductor-channel may still be
+  // installed somewhere on the estate, and a spawned session inheriting a live
+  // one would mint an unwanted identity. Cheap belt-and-braces; drop it once no
+  // machine can still have a pre-2026-08-24 sonnette.
+  return { ...env, ...HEADLESS_ENV, MESH_DISABLED: "1" };
 }
 
 // --- Event extraction helpers ---

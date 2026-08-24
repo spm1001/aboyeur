@@ -1,8 +1,0 @@
-{
-  "mcpServers": {
-    "conductor-channel": {
-      "command": "bun",
-      "args": ["src/conductor-channel.ts"]
-    }
-  }
-}
