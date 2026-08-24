@@ -20,7 +20,16 @@ One observation reframes the whole port: **conductor.sh never had a timer.** Its
 
 ## The /goal evaluator question (brief's open question)
 
-Docs answer: the `/goal` evaluator is a small fast model (Haiku by default) that judges the completion condition after every turn and returns Not-yet-met / Met / Impossible with a reason — **it has no tools, cannot run commands, cannot open files, cannot write** (code.claude.com/docs/en/goal). So on the documented mechanism it carries only the VERDICT role, never the reflector's remedial-fix role. `/goal` is also interactive-TUI-only (no `-p`, no SDK, no subagents), which alone disqualifies it as the alternation backbone for dispatched/loop work. Live confirmation of the documented mechanism: see the prototype log below the map is validated against a real run before this row is treated as settled (test, not assume — the brief's own instruction).
+Docs answer: the `/goal` evaluator is a small fast model (Haiku by default) that judges the completion condition after every turn and returns Not-yet-met / Met / Impossible with a reason — **it has no tools, cannot run commands, cannot open files, cannot write** (code.claude.com/docs/en/goal). `/goal` is also interactive-TUI-only (no `-p`, no SDK, no subagents), which alone disqualifies it as the alternation backbone for dispatched/loop work.
+
+**Measured live (test-not-assume), 2026-08-24, CC 2.1.241, hublot-driven interactive session in ~/repos, target files /tmp/goal-test/ (session 1cd40998, cwd -home-modha-repos):**
+
+- *Phase 1 (happy path):* `/goal python3 /tmp/goal-test/test_greeting.py exits 0 and prints ALL GREEN` against a planted one-character bug. Setting the goal alone started the doer — no separate task prompt. Doer ran the test, read the file, made the Edit, re-ran; evaluator `met:true` after one turn ("Goal achieved · 1 turn · 863 tokens").
+- *Phase 2 (the discriminating case):* new goal against a missing function, with the doer instructed "do not edit any file in this turn". The doer complied — ran the test once, reported verbatim, stopped. The harness rendered "◯ Goal not yet met… continuing" and RE-ENGAGED the doer, which then read the test, wrote the fix, re-ran; `met:true` on turn two. **Every file modification in the transcript is a doer tool call; the evaluator's only observable acts are verdicts and re-engagement.**
+
+So the evaluator carries the VERDICT role plus a persistence/steering channel (its not-met reason re-prompts the doer) — and never the remedial role. The verdict + re-engagement loop is genuinely useful for *supervised* sessions (it defeated a stop instruction's premature halt); remediation is always session-shaped work.
+
+**Legend — measured vs docs-only.** /goal rows above: measured live. CronCreate rows: measured (aby-gonida) + docs (#50911). Workflow rows: **docs-only — the Workflow tool has not been executed on this estate**; its stage/judge properties are borrowed from code.claude.com/docs/en/workflows via a claude-code-guide agent. The prototype's alternation ran on Agent-tool control flow (one measured native form); the Workflow form is the untested half, filed as its own follow-on on this board.
 
 Where the reflector's two halves actually land:
 
