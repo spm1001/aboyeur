@@ -11,6 +11,8 @@ In a professional kitchen, the aboyeur stands at the pass. They don't cook — t
 **Install:** `git clone` + run `conductor.sh`
 **Requires:** Claude Code CLI, Bon
 
+**Direction (2026-08-24):** aboyeur is being re-derived on Claude Code's native loop primitives (board outcome aby-degeki). The SQLite daemon column that once backed trigger watching was deleted — it was never deployed — and the worker/reflector cycle now runs as an orchestrating session's own control flow with fresh-context agent roles; `docs/native-loop-map-2026-08-24.md` maps every conductor responsibility to its native primitive. `conductor.sh` below remains the pre-native reference implementation of the pattern, and the handoff-files protocol it describes is unchanged — that part was always the point.
+
 Aboyeur does the same for Claude sessions. It alternates **worker** sessions (do the work) with **reflector** sessions (review the work), using handoff files as the protocol between them. Each Claude gets a clean context, fresh eyes, and clear direction.
 
 ## The pattern

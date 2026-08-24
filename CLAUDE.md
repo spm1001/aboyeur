@@ -1,20 +1,20 @@
 # Aboyeur — Project Context
 
-Multi-session orchestrator built on a flat peer model. A **daemon** (always-on trigger watcher, just code) watches the world and spawns Claude sessions. Claudes communicate as **peers** via the Anthropic conductor mesh (`<channel>` tags) — no hierarchy, no management layer. Coordination lives in bons and .inbox/, not in a conductor Claude.
+Multi-session orchestrator, now riding CC-native loop primitives (the revival direction, aby-degeki). The hand-rolled scheduling column — SQLite trigger queue, polling loops, cron poller, daemon entry point, systemd unit — was **deleted 2026-08-24 (aby-cazete)**; none of it was ever deployed. What orchestrates today: an orchestrating session's own control flow (the estate's `~/.claude/loop.md` rhythm) spawning fresh-context worker/reflector roles via the Agent tool, **handoff files as the protocol between sessions**, bons as the inbox, and CronCreate ticks for cadence. The responsibility-by-responsibility port is `docs/native-loop-map-2026-08-24.md`. Claudes communicate as **peers** via the Anthropic conductor mesh (`<channel>` tags) — no hierarchy, no management layer.
 
-Read `docs/architecture-decisions.md` for the full design rationale, rejected alternatives, and reference implementations to crib from.
+Read `docs/architecture-decisions.md` for the pre-native design rationale (historical since 2026-08-24).
 
 ## Architecture
 
 ```
-Daemon (Node.js, always-on, no intelligence)
-  ├── polls: Gmail API, cron, filesystem, .inbox/, webhooks
-  ├── normalizes triggers → SQLite queue
-  ├── drains queue through per-context FIFO (max 3 concurrent)
-  └── spawns Claudes via spawnAgent()
+Orchestrating session (loop.md rhythm; no daemon, no SQLite)
+  ├── alternation: sequential Agent() calls — worker role, then reflector role
+  ├── protocol: handoff files on disk (newest = next session's brief)
+  ├── tick checks: bon-hash drift (stuck?), anchored HUMAN REVIEW NEEDED: (escalate?)
+  ├── cadence: CronCreate ticks (session-scoped — see the map's residue list)
+  └── health: HEARTBEAT.md as a native scheduled-task prompt (aby-gonida)
 
 Claudes (peers on the conductor mesh)
-  ├── one-shot: triage an email, check a status, exit
   ├── peer reviewer: read code, send observations via mesh, exit
   ├── conversational: two Claudes discuss a design decision
   ├── beat worker: autonomous code task (beat.ts pattern)
@@ -60,7 +60,7 @@ bon work <action-id>
 
 | GTD | Aboyeur equivalent |
 |---|---|
-| Standalone next action | One-shot: trigger → single Claude → done |
+| Standalone next action | One-shot session (sonner ring or Agent spawn) → done |
 | Project (multi-step) | Sequence of peer sessions coordinated via bons |
 | Areas of focus / goals | Bon outcomes |
 | Weekly review | HEARTBEAT native loop (`HEARTBEAT.md` on a CronCreate task — no daemon) |
@@ -69,18 +69,11 @@ bon work <action-id>
 
 | File | Purpose | Sensitivity |
 |------|---------|-------------|
-| `src/spawn-agent.ts` | spawnAgent() — spawn claude, collect output, resume sessions | High — all spawning goes through here |
-| `src/trigger-db.ts` | SQLite trigger queue — schema, dedup, cursors, crash recovery | High — daemon state lives here |
-| `src/trigger-loop.ts` | Polling loop that drains the trigger queue | Medium |
-| `src/context-queue.ts` | Per-context FIFO with concurrency limits and lane policies | High — prevents runaway spawning |
-| `src/router.ts` | Trigger → SpawnAgentOptions resolver (session naming, prompt loading) | High — routing brain |
-| `src/trigger-cron.ts` | Interval-based cron triggers — no consumers since the HEARTBEAT port (aby-gonida); deletion tracked as aby-cazete | Medium |
-| `src/daemon.ts` | Wires trigger loop → context queue → spawn (with mock injection for tests) | High — integration point |
-| `src/main.ts` | Daemon entry point — wires router, cron, shutdown handlers | High — the executable |
+| `src/spawn-agent.ts` | spawnAgent() — spawn claude, collect output, resume sessions | High — beat.ts's spawner |
 | `src/conductor-bridge.ts` | WebSocket bridge to Anthropic's conductor mesh — ConductorBridge class (transport layer, used by conductor-channel.ts) | High — mesh infrastructure |
 | `src/conductor-channel.ts` | MCP Channels server wrapping ConductorBridge — CC loads via `--dangerously-load-development-channels server:conductor-channel` | High — mesh integration |
 | `src/mesh-capability.ts` | `detectMeshCapability()` — can this session surface inbound, or is it send-only? Pure function over (env, parent argv); statusline.sh mirrors it in bash | High — gates what we advertise on the wire |
-| `src/index.ts` | Barrel export for daemon modules | Low |
+| `src/index.ts` | Barrel export (spawnAgent only, since aby-cazete) | Low |
 | `docs/architecture-decisions.md` | Design decisions and rejected alternatives | High — prevents re-derivation |
 | `shared/prompts/aboyeur-open.md` | Aboyeur instructions (routing, session naming) | High — the brain |
 | `shared/prompts/email-triage.md` | One-shot email handling (classify, draft, escalate) | High — email quality |
@@ -88,7 +81,6 @@ bon work <action-id>
 | `shared/prompts/planning-reflector.md` | Planning reflector (architecture review) | High — catches assumption errors |
 | `shared/prompts/worker-open.md` | Worker instructions | Medium |
 | `shared/prompts/legacy/mesh-awareness.md` | Retired sidecar-era mesh instructions — replaced by conductor-channel.ts instructions field | Low |
-| `service/aboyeur-daemon.service` | Systemd user unit for hezza | Medium |
 | `HEARTBEAT.md` | Self-contained health-check prompt for a native CronCreate loop (ported off the daemon cron 2026-08-24, aby-gonida) | Low |
 
 ### Mesh Integration (validated)
@@ -147,13 +139,11 @@ Auto-derived IDs are stable across resume (same session → same UUID) and **col
 | Gueridon bridge API | `~/Repos/gueridon/server/bridge.ts` (session lifecycle: spawn, list, kill, events) |
 | Orphan process management | `~/Repos/gueridon/server/orphan.ts` |
 | Event parsing | `~/Repos/gueridon/server/state-builder.ts` |
-| FIFO queue + concurrency | `~/Repos/nanoclaw/src/group-queue.ts` |
-| Trigger normalization | `~/Repos/nanoclaw/src/index.ts` |
 
 ## Conventions
 
-- **TypeScript** for all new code (daemon, conductor, spawnAgent)
-- **Gueridon's spawn pattern** for daemon spawning (`claude` CLI + stream-json)
+- **TypeScript** for all new code (mesh, spawnAgent)
+- **Gueridon's spawn pattern** for session spawning (`claude` CLI + stream-json, via spawnAgent)
 - **Gueridon bridge API** for session lifecycle (spawn, list, kill, events)
 - **Channels MCP** for mesh connectivity (`conductor-channel.ts`, not sidecar)
 - **MESH_AGENT_ID env var** to gate mesh on/off per spawn — absent means no mesh
@@ -165,18 +155,16 @@ Auto-derived IDs are stable across resume (same session → same UUID) and **col
 ## Dependencies
 
 - **claude CLI** — session spawning via stream-json
-- **better-sqlite3** — trigger queue, cursor tracking
 - **Bon CLI** (`bon`) — work tracking, structured state via `--json`
-- **Jeton** (`~/Repos/jeton/`) — OAuth token management for Gmail polling
 - **Mise** (`~/Repos/mise-en-space/`) — Google Workspace MCP (email draft/reply/fetch)
 - **Gueridon** (`~/Repos/gueridon/`) — bridge API for session lifecycle (spawn, list, kill, events)
 
 ## Testing
 
-End-to-end test harness (aby-wesaci, complete) with mock spawn injection. Tests the plumbing (trigger → queue → spawn → output → route), not Claude's intelligence. Daemon integration tests cover: full cycle, parallel contexts, FIFO ordering, error handling, crash recovery, dedup, clean shutdown. All fast (<3s), no external deps.
+`npm test` = 13 node tests (spawn-agent, mesh-capability) + 10 bun channel tests (conductor-channel, bridge supersession, mesh-id seam, send-confirm, deregister timing, quiet roster). The daemon integration suite went with the daemon (aby-cazete, 2026-08-24) — its patterns live on in git history pre-`refactor!: delete the SQLite trigger path`.
 
 ## Status
 
-Pre-alpha. Daemon plumbing built and tested (`npm test` = 59 daemon + 10 channel; the better-sqlite3 ABI mismatch was cleared 2026-07-26 with `npm rebuild better-sqlite3`). Mesh connectivity validated via Channels MCP. Peer review loop proven with live round-trips. Supersession fixed (aby-tarafo); same-id double-server war fixed (aby-suwawo, 1.16.1). **Mesh is shipped for real use:** sonnette in the batterie marketplace (aby-zufefu), mesh-at-birth via `claudem` (aby-pafada), one-shot phone-a-friend via `/consult`. The three-rung capability ladder is mapped in `.bon/understanding.md`.
+Pre-alpha, mid-revival. The SQLite daemon column is deleted (aby-cazete, 2026-08-24; never deployed) and orchestration rides native primitives — HEARTBEAT on a scheduled task (aby-gonida), the worker/reflector cycle proven on Agent-tool control flow (aby-dujato, map in `docs/native-loop-map-2026-08-24.md`). `npm test` = 13 node + 10 bun. Mesh connectivity validated via Channels MCP. Peer review loop proven with live round-trips. Supersession fixed (aby-tarafo); same-id double-server war fixed (aby-suwawo, 1.16.1). **Mesh is shipped for real use:** sonnette in the batterie marketplace (aby-zufefu), mesh-at-birth via `claudem` (aby-pafada), one-shot phone-a-friend via `/consult`. The three-rung capability ladder is mapped in `.bon/understanding.md`.
 
 **Current focus is `aby-jepezu`** — quiet by default, truthful about capability, observable at a glance. Shipped so far: quiet roster (aby-huciza) and capability self-detection (aby-masogo), both live-validated on a real `claudem` session. Next: **aby-sahifi** (advertise capability honestly at registration, in `mesh_peers`, and at send time) — which unblocks **aby-werazu** (re-enable sonnette standing, reversing the micozi interim) and is gated on **aby-wazica** (the `/proc` portability fix). Then aby-gukori, aby-kisemi, aby-darode, aby-cezihe, aby-lejoso, aby-zawigu. Elsewhere: aby-lezuhu closes the Bun outcome (docs sweep, scope now just `docs/MESH-SETUP.md`), aby-luviwu graduates `/consult` to trousse. `aby-rawupo` has one step left — verify the shipped instructions render in a *fresh* session.

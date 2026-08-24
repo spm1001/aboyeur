@@ -1,5 +1,7 @@
 # Architecture Narrative: A Trigger Becomes Work
 
+> **Historical since 2026-08-24.** The trigger→queue→spawn machinery this narrative walks through was deleted under aby-cazete — never deployed. Current design: `docs/native-loop-map-2026-08-24.md`.
+
 Walk-through of the Rube Goldberg scenario, end to end.
 
 ## The Setup

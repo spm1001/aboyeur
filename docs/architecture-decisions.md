@@ -1,5 +1,7 @@
 # Architecture Decisions
 
+> **Historical since 2026-08-24.** The SQLite trigger path this document designs (trigger queue, polling loops, daemon, HEARTBEAT-on-daemon-cron) was deleted under aby-cazete — never deployed. The current design rides CC-native primitives: `docs/native-loop-map-2026-08-24.md`. The decisions below remain the record of what was considered and why.
+
 Captured 6 Mar 2026 from a research and design session. This document records what was decided, what was rejected, and why — so future Claudes don't re-derive settled questions.
 
 ## The Core Metaphor

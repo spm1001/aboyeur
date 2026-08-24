@@ -12,12 +12,10 @@
     "build:sonnette": "bun build src/conductor-channel.ts --target=bun --outfile=sonnette/conductor-channel.js"
   },
   "devDependencies": {
-    "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^22",
     "typescript": "^5.7"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.27.1",
-    "better-sqlite3": "^12.6.2"
+    "@modelcontextprotocol/sdk": "^1.27.1"
   }
 }
